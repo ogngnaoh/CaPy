@@ -1,0 +1,59 @@
+# CaPy Default Configuration
+# See capy-prd-fsd.md Section 7.2 for rationale
+
+seed: 42
+
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  morph_features: ~1000  # after QC
+  expr_features: 978     # L1000 landmark genes
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  nan_threshold: 0.5     # remove features with >50% NaN
+  clip_range: 5.0        # clip RobustScaler output to [-5, 5]
+
+model:
+  embedding_dim: 256
+  # Molecular encoder (GIN)
+  gin:
+    num_layers: 5
+    hidden_dim: 300
+  # MLP encoders (morphology + expression)
+  mlp:
+    hidden_dim: 512
+    num_residual_blocks: 2
+    dropout: 0.1
+  # Temperature
+  temperature_init: 0.07
+
+training:
+  epochs: 200
+  batch_size: 128
+  optimizer: adamw
+  lr_mlp: 1.0e-3
+  lr_gin: 1.0e-4
+  weight_decay: 1.0e-4
+  grad_clip: 1.0
+  # Loss weights
+  lambda_mol_morph: 1.0
+  lambda_mol_expr: 1.0
+  lambda_morph_expr: 1.0
+  # Scheduler
+  scheduler: cosine
+  warmup_epochs: 10
+  # Early stopping
+  early_stopping_patience: 20
+  early_stopping_metric: mean_R@10
+
+evaluation:
+  retrieval_ks: [1, 5, 10]
+  clustering_ks: [5, 10, 20]  # for k-NN MOA accuracy
+
+logging:
+  use_wandb: false
+  wandb_project: capy
+  wandb_entity: null
+  log_every_n_steps: 10
+  checkpoint_dir: checkpoints

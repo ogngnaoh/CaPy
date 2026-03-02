@@ -1,0 +1,23 @@
+# Bi-modal ablation configurations
+# Override default.yaml with these for ablation experiments
+# See capy-prd-fsd.md Section 8.3
+
+# Usage: python scripts/train.py --config configs/default.yaml --config configs/ablation_bimodal.yaml --override training.ablation_mode=mol_morph
+
+# Ablation modes:
+#   mol_morph  - only mol↔morph loss (lambda_mol_expr=0, lambda_morph_expr=0)
+#   mol_expr   - only mol↔expr loss (lambda_mol_morph=0, lambda_morph_expr=0)
+#   morph_expr - only morph↔expr loss (lambda_mol_morph=0, lambda_mol_expr=0)
+
+training:
+  ablation_mode: null  # set to one of: mol_morph, mol_expr, morph_expr
+
+# Embedding dimension sweep
+# embedding_dim_sweep: [64, 128, 256, 512]
+
+# Lambda weight sweep
+# lambda_sweep:
+#   - [1.0, 1.0, 1.0]
+#   - [2.0, 1.0, 1.0]
+#   - [1.0, 2.0, 1.0]
+#   - [1.0, 1.0, 2.0]

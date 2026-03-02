@@ -1,0 +1,48 @@
+# Data
+data/raw/
+data/processed/
+*.parquet
+*.csv
+*.h5
+*.hdf5
+
+# Model artifacts
+*.pt
+*.pth
+*.ckpt
+checkpoints/
+
+# Experiment tracking
+wandb/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Claude
+.claude/
