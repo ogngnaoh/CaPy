@@ -1,29 +1,25 @@
 # Data
 data/raw/
 data/processed/
-*.parquet
-*.csv
-*.h5
-*.hdf5
+data/diagnostics/
 
-# Model artifacts
-*.pt
-*.pth
-*.ckpt
+# Checkpoints and results
 checkpoints/
-
-# Experiment tracking
 wandb/
-outputs/
 
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
 *.egg-info/
 dist/
 build/
-*.egg
+.eggs/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
 
 # Environment
 .env
@@ -31,18 +27,7 @@ build/
 venv/
 env/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+# Misc
+SCRATCHPAD.md
 .DS_Store
-Thumbs.db
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Claude
-.claude/
+*.log

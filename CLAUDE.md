@@ -92,3 +92,33 @@ YAML configs in `configs/` loaded via `omegaconf` or `pydantic`. All experiments
 - All embeddings are **L2-normalized** before computing InfoNCE loss
 - Expression data is already z-scored; morphology data needs RobustScaler normalization
 - The core scientific claim to validate: tri-modal > any bi-modal pair on retrieval metrics
+
+## Critical Conventions
+
+- ALL public functions: Google-style docstrings with type hints
+- NEVER use raw print() — use the logger from src/utils/logging.py
+- Every module must have a corresponding test file
+- Embedding dimension is 256 everywhere — constant, not magic number
+- Use cfg (omegaconf DictConfig) for all hyperparameters, never hardcode
+- InfoNCE loss is SYMMETRIC (average both directions) — verify every time
+- Molecular graphs: always validate node features are [num_atoms, feat_dim]
+- All random seeds (torch, numpy, random, PyG) must be set via utils/config.py
+
+## What NOT To Do
+
+- Do NOT use raw images — we use pre-extracted CellProfiler features only
+- Do NOT commit data/ or checkpoints/ (gitignored)
+- Do NOT use Transformers/attention for tabular encoders (MLPs are correct)
+- Do NOT hardcode paths — use configs or Path objects
+
+## Teaching Mode
+
+When implementing new components, ALWAYS:
+1. Write the code
+2. Write the test
+3. Explain the key design decision in a WHY THIS WORKS comment block
+   at the top of the file, written for someone learning ML/PyTorch
+
+## Current Phase
+
+Phase 1 — Foundation (Data Pipeline + Model Architecture)
