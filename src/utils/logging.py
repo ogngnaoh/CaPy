@@ -15,8 +15,6 @@
 import logging
 import sys
 
-from omegaconf import DictConfig
-
 
 def get_logger(name: str) -> logging.Logger:
     """Create or retrieve a named logger with console output.
@@ -46,7 +44,7 @@ def get_logger(name: str) -> logging.Logger:
     return logger
 
 
-def setup_wandb(cfg: DictConfig) -> object | None:
+def setup_wandb(cfg: "DictConfig") -> object | None:  # noqa: F821
     """Initialize a wandb run if enabled in config.
 
     Args:
