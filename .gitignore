@@ -27,6 +27,9 @@ build/
 venv/
 env/
 
+# Local docs / personal notes
+docs/local/
+
 # Misc
 SCRATCHPAD.md
 .DS_Store

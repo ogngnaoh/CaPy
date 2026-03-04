@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$'; then .venv/bin/black --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; .venv/bin/ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '^(data/raw|data/processed|checkpoints)/'; then echo 'BLOCKED: Do not edit files in data/raw/, data/processed/, or checkpoints/ — these are gitignored output directories.' >&2; exit 2; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
