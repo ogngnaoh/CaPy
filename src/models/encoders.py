@@ -164,7 +164,7 @@ class MolecularEncoder(nn.Module):
 
         # Project and normalize
         h = self.projection(h)
-        return f.normalize(h, p=2, dim=-1)
+        return f.normalize(h, p=2, dim=-1, eps=1e-8)
 
 
 # ---------------------------------------------------------------------------
@@ -230,4 +230,4 @@ class TabularEncoder(nn.Module):
             h = block(h) + h  # residual connection
 
         h = self.projection(h)
-        return f.normalize(h, p=2, dim=-1)
+        return f.normalize(h, p=2, dim=-1, eps=1e-8)

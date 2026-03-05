@@ -8,8 +8,8 @@
 # (CLIP, SupCon) because (a) it keeps τ positive without constraints,
 # and (b) multiplicative updates in τ-space become additive in log-τ
 # space, matching how SGD works.  We clamp τ ∈ [0.01, 10] to prevent
-# numerical blowup; the clamp uses .clamp() which still passes
-# gradients when within range (straight-through at boundaries).
+# numerical blowup; .clamp() passes gradients when within range but
+# zeroes them at the boundaries (hard clamp, not straight-through).
 #
 # **Loss aggregation:**
 # L_total = λ₁·L(mol↔morph) + λ₂·L(mol↔expr) + λ₃·L(morph↔expr)

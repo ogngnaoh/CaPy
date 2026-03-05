@@ -307,6 +307,41 @@ class TestPreprocess:
         assert result["morph_a"].min() >= -5.0
 
     @requires_pandas
+    @requires_numpy
+    def test_normalize_train_mask_no_leakage(self) -> None:
+        """Scaler should be fitted on train rows only when train_mask given."""
+        import pandas as pd
+
+        from src.data.preprocess import normalize_features
+
+        df = pd.DataFrame(
+            {
+                "morph_a": [1.0, 2.0, 3.0, 4.0, 100.0, 200.0],
+                "expr_a": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            }
+        )
+        train_mask = pd.Series([True, True, True, True, False, False])
+
+        result_with_mask, _ = normalize_features(
+            df,
+            morph_cols=["morph_a"],
+            expr_cols=["expr_a"],
+            clip_range=5.0,
+            train_mask=train_mask,
+        )
+        result_without_mask, _ = normalize_features(
+            df,
+            morph_cols=["morph_a"],
+            expr_cols=["expr_a"],
+            clip_range=5.0,
+        )
+        # With train_mask, scaler is fitted on [1,2,3,4] only,
+        # so test rows (100,200) should scale differently
+        train_vals_with = result_with_mask.loc[train_mask, "morph_a"]
+        train_vals_without = result_without_mask.loc[train_mask, "morph_a"]
+        assert not train_vals_with.equals(train_vals_without)
+
+    @requires_pandas
     @requires_rdkit
     def test_scaffold_split_proportions(self) -> None:
         """Split ratios should be approximately correct."""

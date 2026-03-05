@@ -127,29 +127,37 @@ def feature_qc(
     morph_cols: list[str],
     expr_cols: list[str],
     nan_threshold: float = 0.5,
+    train_mask: pd.Series | None = None,  # noqa: F821
 ) -> tuple[pd.DataFrame, list[str], list[str]]:  # noqa: F821
     """Remove features with too many NaNs or zero variance.
+
+    Statistics (NaN fraction, variance) are computed on the training
+    set only when ``train_mask`` is provided, preventing data leakage
+    from val/test into feature selection.
 
     Args:
         df: Compound-level data frame.
         morph_cols: Morphology feature column names.
         expr_cols: Expression feature column names.
         nan_threshold: Drop features with NaN fraction above this value.
+        train_mask: Boolean Series selecting training rows.  If ``None``,
+            statistics are computed on the full dataframe (legacy behavior).
 
     Returns:
         Tuple of (cleaned df, surviving morph_cols, surviving expr_cols).
     """
     _ensure_imports()
+    stats_df = df.loc[train_mask] if train_mask is not None else df
 
     def _filter_cols(cols: list[str]) -> list[str]:
         kept = []
         for c in cols:
             if c not in df.columns:
                 continue
-            nan_frac = df[c].isna().mean()
+            nan_frac = stats_df[c].isna().mean()
             if nan_frac > nan_threshold:
                 continue
-            if df[c].std() == 0:
+            if stats_df[c].std() == 0:
                 continue
             kept.append(c)
         return kept
@@ -174,14 +182,21 @@ def normalize_features(
     morph_cols: list[str],
     expr_cols: list[str],
     clip_range: float = 5.0,
+    train_mask: pd.Series | None = None,  # noqa: F821
 ) -> tuple[pd.DataFrame, object]:  # noqa: F821
     """Apply RobustScaler to morphology and verify expression z-scores.
+
+    When ``train_mask`` is provided, the scaler is fitted on training
+    rows only and applied to all rows — preventing data leakage from
+    val/test into normalization statistics.
 
     Args:
         df: Data frame with QC-passed features.
         morph_cols: Morphology feature column names.
         expr_cols: Expression feature column names.
         clip_range: Clip scaled morphology values to ``[-clip_range, clip_range]``.
+        train_mask: Boolean Series selecting training rows.  If ``None``,
+            the scaler is fitted on the full dataframe (legacy behavior).
 
     Returns:
         Tuple of (normalized df, fitted RobustScaler for morphology).
@@ -191,22 +206,38 @@ def normalize_features(
 
     df = df.copy()
 
-    # Morphology: RobustScaler then clip
+    # Morphology: RobustScaler fitted on train only, applied to all
     scaler = RobustScaler()
-    df[morph_cols] = scaler.fit_transform(df[morph_cols])
+    if train_mask is not None:
+        if not train_mask.index.equals(df.index):
+            raise ValueError(
+                "train_mask index does not align with df index. "
+                "Recompute train_mask after any row-dropping operations."
+            )
+        scaler.fit(df.loc[train_mask, morph_cols])
+    else:
+        scaler.fit(df[morph_cols])
+    df[morph_cols] = scaler.transform(df[morph_cols])
     df[morph_cols] = df[morph_cols].clip(-clip_range, clip_range)
 
-    # Expression: verify z-scores; re-normalize if drift is large
-    expr_mean = df[expr_cols].mean().mean()
-    expr_std = df[expr_cols].std().mean()
+    # Expression: verify z-scores using train stats; re-normalize if drift is large
+    if train_mask is not None:
+        stats_df = df.loc[train_mask, expr_cols]
+    else:
+        stats_df = df[expr_cols]
+    expr_mean = stats_df.mean().mean()
+    expr_std = stats_df.std().mean()
     logger.info(
-        "Expression stats: mean=%.4f, std=%.4f (expected ~0, ~1).",
+        "Expression stats (train): mean=%.4f, std=%.4f (expected ~0, ~1).",
         expr_mean,
         expr_std,
     )
     if abs(expr_mean) > 0.5 or abs(expr_std - 1.0) > 0.5:
         logger.warning("Expression data deviates from z-score; re-normalizing.")
-        df[expr_cols] = (df[expr_cols] - df[expr_cols].mean()) / df[expr_cols].std()
+        train_mean = stats_df.mean()
+        train_std = stats_df.std()
+        train_std = train_std.replace(0, 1.0)  # guard against division by zero
+        df[expr_cols] = (df[expr_cols] - train_mean) / train_std
 
     return df, scaler
 
@@ -457,17 +488,7 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     # 4. Remove controls
     df = remove_controls(df)
 
-    # 5. Feature QC
-    df, morph_cols, expr_cols = feature_qc(
-        df, morph_cols, expr_cols, nan_threshold=cfg.data.nan_threshold
-    )
-
-    # 6. Normalize
-    df, _ = normalize_features(
-        df, morph_cols, expr_cols, clip_range=cfg.data.clip_range
-    )
-
-    # 7. Scaffold split
+    # 5. Scaffold split FIRST — so QC and normalization use train stats only
     df = scaffold_split(
         df,
         smiles_col="smiles",
@@ -475,6 +496,27 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         val_ratio=cfg.data.val_ratio,
         test_ratio=cfg.data.test_ratio,
         seed=cfg.seed,
+    )
+    train_mask = df["split"] == "train"
+
+    # 6. Feature QC (stats computed on train only)
+    df, morph_cols, expr_cols = feature_qc(
+        df,
+        morph_cols,
+        expr_cols,
+        nan_threshold=cfg.data.nan_threshold,
+        train_mask=train_mask,
+    )
+    # Recompute train_mask after QC may have dropped rows
+    train_mask = df["split"] == "train"
+
+    # 7. Normalize (scaler fitted on train only, applied to all)
+    df, _ = normalize_features(
+        df,
+        morph_cols,
+        expr_cols,
+        clip_range=cfg.data.clip_range,
+        train_mask=train_mask,
     )
 
     # 8. Save

@@ -66,6 +66,7 @@ _CHIRALITY_OTHER = len(_CHIRALITY_LIST)  # 3
 # Hybridization types
 _HYBRIDIZATION_LIST = ["S", "SP", "SP2", "SP3", "SP3D", "SP3D2"]
 _HYBRIDIZATION_TO_IDX = {h: i for i, h in enumerate(_HYBRIDIZATION_LIST)}
+_HYBRIDIZATION_OTHER = len(_HYBRIDIZATION_LIST)  # 6
 
 # Bond types
 _BOND_TYPE_LIST = ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC"]
@@ -94,7 +95,7 @@ ATOM_FEATURE_DIMS = [
     5,  # formal charge −2..+2 → 0..4
     5,  # num H 0–4
     3,  # num radical electrons 0–2
-    len(_HYBRIDIZATION_LIST),  # hybridization (6)
+    len(_HYBRIDIZATION_LIST) + 1,  # hybridization (7, last = OTHER)
     2,  # is aromatic
     2,  # is in ring
 ]
@@ -133,12 +134,10 @@ def _atom_to_feature_vector(atom) -> list[int]:  # noqa: ANN001
             else _CHIRALITY_OTHER
         ),
         min(atom.GetTotalDegree(), 5),
-        atom.GetFormalCharge() + 2,  # shift -2..+2 → 0..4
+        min(max(atom.GetFormalCharge() + 2, 0), 4),  # shift -2..+2 → 0..4, clamped
         min(atom.GetTotalNumHs(), 4),
         min(atom.GetNumRadicalElectrons(), 2),
-        _HYBRIDIZATION_TO_IDX.get(
-            str(atom.GetHybridization()), len(_HYBRIDIZATION_LIST) - 1
-        ),
+        _HYBRIDIZATION_TO_IDX.get(str(atom.GetHybridization()), _HYBRIDIZATION_OTHER),
         int(atom.GetIsAromatic()),
         int(atom.IsInRing()),
     ]
