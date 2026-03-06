@@ -77,8 +77,6 @@ def log_metrics(metrics: dict, step: int | None = None, prefix: str = "") -> Non
         prefix: Optional prefix prepended to each metric key
             (e.g. ``"val/"``).
     """
-    import wandb
-
     logger = get_logger("capy.metrics")
 
     prefixed = {f"{prefix}{k}": v for k, v in metrics.items()} if prefix else metrics
@@ -90,6 +88,11 @@ def log_metrics(metrics: dict, step: int | None = None, prefix: str = "") -> Non
     ]
     logger.info(" | ".join(parts))
 
-    # wandb (no-op if no active run)
-    if wandb.run is not None:
-        wandb.log(prefixed, step=step)
+    # wandb (no-op if not installed or no active run)
+    try:
+        import wandb
+
+        if wandb.run is not None:
+            wandb.log(prefixed, step=step)
+    except ImportError:
+        pass
