@@ -9,6 +9,24 @@
             "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '\\.py$'; then .venv/bin/black --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; .venv/bin/ruff check --fix --quiet \"$CLAUDE_FILE_PATH\" 2>/dev/null; fi; exit 0"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '^tests/.*\\.py$'; then .venv/bin/pytest \"$CLAUDE_FILE_PATH\" -x -q 2>/dev/null; fi; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATH\" | grep -qE '^src/.*\\.py$'; then TEST_FILE=\"tests/test_$(basename $(dirname \"$CLAUDE_FILE_PATH\")).py\"; if [ -f \"$TEST_FILE\" ]; then .venv/bin/pytest \"$TEST_FILE\" -x -q 2>/dev/null; fi; fi; exit 0"
+          }
+        ]
       }
     ],
     "PreToolUse": [
