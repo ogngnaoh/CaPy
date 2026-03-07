@@ -457,10 +457,19 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     # 1. Load raw profiles
     morph_df, expr_df = load_raw_profiles(raw_dir)
 
-    # 2. Match compounds across modalities
-    df = match_compounds(morph_df, expr_df)
+    # 2. Load compound metadata (SMILES, MOA) if available
+    metadata_df = None
+    metadata_path = raw_dir / "metadata" / "repurposing_samples.txt"
+    if metadata_path.exists():
+        metadata_df = _pd.read_csv(metadata_path, sep="\t")
+        logger.info("Loaded compound metadata: %d rows from %s", len(metadata_df), metadata_path)
+    else:
+        logger.warning("Compound metadata not found at %s — SMILES may be missing.", metadata_path)
 
-    # 3. Identify feature columns
+    # 3. Match compounds across modalities
+    df = match_compounds(morph_df, expr_df, metadata_df=metadata_df)
+
+    # 4. Identify feature columns
     morph_cols = [
         c
         for c in df.columns
@@ -485,10 +494,10 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         ]
         expr_cols = non_meta
 
-    # 4. Remove controls
+    # 5. Remove controls
     df = remove_controls(df)
 
-    # 5. Scaffold split FIRST — so QC and normalization use train stats only
+    # 6. Scaffold split FIRST — so QC and normalization use train stats only
     df = scaffold_split(
         df,
         smiles_col="smiles",
@@ -499,7 +508,7 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     )
     train_mask = df["split"] == "train"
 
-    # 6. Feature QC (stats computed on train only)
+    # 7. Feature QC (stats computed on train only)
     df, morph_cols, expr_cols = feature_qc(
         df,
         morph_cols,
@@ -510,7 +519,7 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     # Recompute train_mask after QC may have dropped rows
     train_mask = df["split"] == "train"
 
-    # 7. Normalize (scaler fitted on train only, applied to all)
+    # 8. Normalize (scaler fitted on train only, applied to all)
     df, _ = normalize_features(
         df,
         morph_cols,
@@ -519,5 +528,5 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         train_mask=train_mask,
     )
 
-    # 8. Save
+    # 9. Save
     return save_processed_data(df, morph_cols, expr_cols, processed_dir)
