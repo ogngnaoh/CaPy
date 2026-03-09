@@ -438,7 +438,14 @@ def match_compounds(
     if metadata_df is not None:
         if "broad_id" in metadata_df.columns:
             metadata_df = metadata_df.rename(columns={"broad_id": "compound_id"})
-        merged = merged.merge(metadata_df, on="compound_id", how="left")
+        if "compound_id" not in metadata_df.columns:
+            logger.warning(
+                "Metadata has no 'compound_id' or 'broad_id' column "
+                "(columns: %s). Skipping metadata merge.",
+                list(metadata_df.columns[:5]),
+            )
+        else:
+            merged = merged.merge(metadata_df, on="compound_id", how="left")
 
     return merged
 
