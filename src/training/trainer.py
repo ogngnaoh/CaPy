@@ -123,7 +123,7 @@ class Trainer:
         )
 
         for epoch in range(start_epoch, self.epochs):
-            train_loss = self._train_one_epoch(epoch)
+            train_stats = self._train_one_epoch(epoch)
 
             val_metrics: dict[str, float] = {}
             if self.val_loader is not None:
@@ -159,12 +159,25 @@ class Trainer:
 
             self.scheduler.step()
 
-            # Log epoch summary
-            epoch_summary = {"epoch": epoch, "train_loss": train_loss}
+            # Enriched epoch summary
+            epoch_summary: dict[str, float] = {"epoch": epoch}
+            epoch_summary.update(train_stats)
+
+            # Learning rates from optimizer param groups
+            lrs = [pg["lr"] for pg in self.optimizer.param_groups]
+            if len(lrs) >= 2:
+                epoch_summary["lr_gin"] = lrs[0]
+                epoch_summary["lr_mlp"] = lrs[1]
+
             if val_metrics:
                 epoch_summary[self.early_stopping_metric] = val_metrics.get(
                     self.early_stopping_metric, 0.0
                 )
+                # Per-direction R@10
+                for key, value in val_metrics.items():
+                    if key.endswith("/R@10"):
+                        epoch_summary[key] = value
+
             log_metrics(epoch_summary, step=epoch, prefix="epoch/")
 
         logger.info(
@@ -174,18 +187,21 @@ class Trainer:
         )
         return self._best_metrics
 
-    def _train_one_epoch(self, epoch: int) -> float:
+    def _train_one_epoch(self, epoch: int) -> dict[str, float]:
         """Run one training epoch.
 
         Args:
             epoch: Current epoch number (0-indexed).
 
         Returns:
-            Mean training loss for this epoch.
+            Dict with ``train_loss``, ``grad_norm``, per-pair losses,
+            and ``temperature``.
         """
         self.model.train()
         total_loss = 0.0
+        total_grad_norm = 0.0
         n_batches = 0
+        last_loss_dict: dict[str, float] = {}
 
         for batch_graphs, morph, expr in self.train_loader:
             batch_graphs = batch_graphs.to(self.device)
@@ -204,23 +220,46 @@ class Trainer:
 
             self.optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+            grad_norm = nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.grad_clip
+            )
             self.optimizer.step()
 
             total_loss += loss.item()
+            total_grad_norm += grad_norm.item()
             n_batches += 1
             self._global_step += 1
+            last_loss_dict = loss_dict
 
             if self._global_step % self.log_every_n_steps == 0:
-                log_metrics(loss_dict, step=self._global_step, prefix="train/")
+                step_metrics = {**loss_dict, "grad_norm": grad_norm.item()}
+                log_metrics(step_metrics, step=self._global_step, prefix="train/")
 
         if n_batches == 0:
             logger.warning(
                 "Epoch %d: train_loader yielded 0 batches — is the dataset empty?",
                 epoch,
             )
+
         mean_loss = total_loss / max(1, n_batches)
-        return mean_loss
+        mean_grad_norm = total_grad_norm / max(1, n_batches)
+
+        # Read temperature from the model's loss module
+        temperature = float(
+            getattr(self.model, "temperature", torch.tensor(0.07)).detach().cpu()
+        )
+
+        epoch_stats: dict[str, float] = {
+            "train_loss": mean_loss,
+            "grad_norm": mean_grad_norm,
+            "temperature": temperature,
+        }
+        # Include per-pair losses from last batch
+        for k, v in last_loss_dict.items():
+            if k != "total_loss":
+                epoch_stats[k] = v
+
+        return epoch_stats
 
     @torch.no_grad()
     def _validate(self, epoch: int) -> dict[str, float]:

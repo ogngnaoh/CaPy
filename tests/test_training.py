@@ -241,7 +241,7 @@ class TestTrainer:
     """Tests for the Trainer class using synthetic data."""
 
     def test_single_epoch_finite_loss(self) -> None:
-        """_train_one_epoch returns a finite float."""
+        """_train_one_epoch returns a dict with finite train_loss and grad_norm."""
         import math
 
         from src.training.trainer import Trainer
@@ -258,9 +258,13 @@ class TestTrainer:
             scheduler,
             device,
         )
-        loss = trainer._train_one_epoch(0)
-        assert isinstance(loss, float)
-        assert math.isfinite(loss)
+        stats = trainer._train_one_epoch(0)
+        assert isinstance(stats, dict)
+        assert "train_loss" in stats
+        assert "grad_norm" in stats
+        assert "temperature" in stats
+        assert math.isfinite(stats["train_loss"])
+        assert math.isfinite(stats["grad_norm"])
 
     def test_fit_completes(self, tmp_path) -> None:
         """fit() returns a dict and completes without errors."""

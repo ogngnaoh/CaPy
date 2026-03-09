@@ -95,7 +95,7 @@ class TestEvaluateAllRetrieval:
     """Tests for the all-directions evaluate_all_retrieval function."""
 
     def test_all_directions_present(self) -> None:
-        """All 6 directions × 4 metrics + 4 means = 28 keys."""
+        """All 6 directions × 4 metrics + 4 means + 8 align/uniform = 36 keys."""
         import torch
 
         from src.evaluation.retrieval import evaluate_all_retrieval
@@ -103,8 +103,8 @@ class TestEvaluateAllRetrieval:
         n = 10
         z = torch.eye(n)
         metrics = evaluate_all_retrieval(z, z, z)
-        # 6 directions × 4 metrics + 4 means = 28
-        assert len(metrics) == 28
+        # 6 directions × 4 metrics + 4 means + 3 align + 3 uniform + 2 agg = 36
+        assert len(metrics) == 36
 
         # Check all direction keys exist
         directions = [
@@ -167,3 +167,71 @@ class TestEvaluateAllRetrieval:
 
         expected_mrr = sum(metrics[f"{d}/MRR"] for d in directions) / 6
         assert metrics["mean_MRR"] == pytest.approx(expected_mrr)
+
+
+# ---------------------------------------------------------------------------
+# TestAlignmentUniformity
+# ---------------------------------------------------------------------------
+
+
+@requires_torch
+class TestAlignmentUniformity:
+    """Tests for alignment and uniformity diagnostics."""
+
+    def test_perfect_alignment_is_zero(self) -> None:
+        """Identical embeddings → alignment = 0."""
+        import torch
+
+        from src.evaluation.retrieval import compute_alignment
+
+        z = torch.randn(20, 32)
+        z = z / z.norm(dim=1, keepdim=True)
+        assert compute_alignment(z, z) == pytest.approx(0.0, abs=1e-6)
+
+    def test_uniformity_collapsed_near_zero(self) -> None:
+        """All-same embeddings (collapsed) → uniformity ≈ 0."""
+        import torch
+
+        from src.evaluation.retrieval import compute_uniformity
+
+        z = torch.ones(20, 32)
+        z = z / z.norm(dim=1, keepdim=True)
+        # All identical → pairwise distances = 0 → exp(0) = 1 → log(1) = 0
+        assert compute_uniformity(z) == pytest.approx(0.0, abs=1e-6)
+
+    def test_uniformity_spread_is_negative(self) -> None:
+        """Well-spread embeddings → uniformity < 0."""
+        import torch
+
+        from src.evaluation.retrieval import compute_uniformity
+
+        torch.manual_seed(42)
+        z = torch.randn(50, 64)
+        z = z / z.norm(dim=1, keepdim=True)
+        assert compute_uniformity(z) < 0.0
+
+    def test_keys_in_evaluate_all_retrieval(self) -> None:
+        """Alignment/uniformity keys appear in full evaluation output."""
+        import torch
+
+        from src.evaluation.retrieval import evaluate_all_retrieval
+
+        torch.manual_seed(7)
+        n = 15
+        z_mol = torch.randn(n, 32)
+        z_morph = torch.randn(n, 32)
+        z_expr = torch.randn(n, 32)
+        for z in [z_mol, z_morph, z_expr]:
+            z.div_(z.norm(dim=1, keepdim=True))
+
+        metrics = evaluate_all_retrieval(z_mol, z_morph, z_expr)
+
+        # 3 alignment keys
+        for pair in ["mol_morph", "mol_expr", "morph_expr"]:
+            assert f"align_{pair}" in metrics
+        # 3 uniformity keys
+        for mod in ["mol", "morph", "expr"]:
+            assert f"uniform_{mod}" in metrics
+        # 2 aggregate keys
+        assert "mean_alignment" in metrics
+        assert "mean_uniformity" in metrics

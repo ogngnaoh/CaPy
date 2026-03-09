@@ -95,6 +95,45 @@ def compute_retrieval_metrics(
 
 
 # ---------------------------------------------------------------------------
+# Alignment & uniformity (Wang & Isola 2020)
+# ---------------------------------------------------------------------------
+
+
+def compute_alignment(z_a: torch.Tensor, z_b: torch.Tensor, alpha: float = 2.0) -> float:
+    """Mean pairwise distance between aligned positive pairs.
+
+    Lower = better (positive pairs are close together).
+
+    Args:
+        z_a: L2-normalized embeddings ``[N, D]``.
+        z_b: L2-normalized embeddings ``[N, D]`` (aligned with z_a).
+        alpha: Exponent for the distance (default 2 = squared L2).
+
+    Returns:
+        Alignment score (float).
+    """
+    _ensure_imports()
+    return (z_a - z_b).norm(dim=1).pow(alpha).mean().item()
+
+
+def compute_uniformity(z: torch.Tensor, t: float = 2.0) -> float:
+    """Log-mean-exp of pairwise Gaussian kernel on embeddings.
+
+    Lower = more uniform (spread on hypersphere). Near 0 = collapsed.
+
+    Args:
+        z: L2-normalized embeddings ``[N, D]``.
+        t: Temperature for the Gaussian kernel (default 2).
+
+    Returns:
+        Uniformity score (float).
+    """
+    _ensure_imports()
+    sq_pdist = _torch.pdist(z, p=2).pow(2)
+    return sq_pdist.mul(-t).exp().mean().log().item()
+
+
+# ---------------------------------------------------------------------------
 # All-direction evaluation
 # ---------------------------------------------------------------------------
 
@@ -148,12 +187,36 @@ def evaluate_all_retrieval(
         values = [all_metrics[f"{d[0]}/{metric_name}"] for d in _DIRECTIONS]
         all_metrics[f"mean_{metric_name}"] = sum(values) / len(values)
 
+    # Alignment & uniformity diagnostics
+    _pairs = [
+        ("mol_morph", z_mol, z_morph),
+        ("mol_expr", z_mol, z_expr),
+        ("morph_expr", z_morph, z_expr),
+    ]
+    for pair_name, za, zb in _pairs:
+        all_metrics[f"align_{pair_name}"] = compute_alignment(za, zb)
+    for mod_name, z in [("mol", z_mol), ("morph", z_morph), ("expr", z_expr)]:
+        all_metrics[f"uniform_{mod_name}"] = compute_uniformity(z)
+    # Aggregate alignment/uniformity
+    all_metrics["mean_alignment"] = sum(
+        all_metrics[f"align_{p}"] for p, _, _ in _pairs
+    ) / len(_pairs)
+    all_metrics["mean_uniformity"] = sum(
+        all_metrics[f"uniform_{m}"]
+        for m in ["mol", "morph", "expr"]
+    ) / 3.0
+
     logger.info(
         "Retrieval: mean_R@1=%.4f, mean_R@5=%.4f, mean_R@10=%.4f, mean_MRR=%.4f",
         all_metrics["mean_R@1"],
         all_metrics["mean_R@5"],
         all_metrics["mean_R@10"],
         all_metrics["mean_MRR"],
+    )
+    logger.info(
+        "Diagnostics: mean_alignment=%.4f, mean_uniformity=%.4f",
+        all_metrics["mean_alignment"],
+        all_metrics["mean_uniformity"],
     )
 
     return all_metrics
