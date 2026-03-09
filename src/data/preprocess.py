@@ -28,6 +28,10 @@ from pathlib import Path
 
 from src.utils.logging import get_logger
 
+# Prefixes that indicate metadata columns — must be excluded from feature lists
+# even when they end with _morph or _expr after a merge with suffixes.
+_METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
+
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -618,7 +622,10 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     expr_cols = [
         c
         for c in df.columns
-        if c != "compound_id" and c.endswith("_expr") and c in numeric_cols
+        if c != "compound_id"
+        and c.endswith("_expr")
+        and c in numeric_cols
+        and not any(c.startswith(p) for p in _METADATA_PREFIXES)
     ]
     # Fallback: if suffix-based detection yields nothing, use heuristics
     if not morph_cols:

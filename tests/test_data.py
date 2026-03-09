@@ -741,3 +741,39 @@ class TestDataset:
             _, m, e = ds[i]
             assert not torch.isnan(m).any()
             assert not torch.isnan(e).any()
+
+
+# ===================================================================
+# TestFeatureDetection — validates morph/expr column detection logic
+# ===================================================================
+
+
+class TestFeatureDetection:
+    """Tests for morph/expr column detection logic."""
+
+    @requires_pandas
+    def test_expr_cols_excludes_metadata(self) -> None:
+        """pert_dose_expr and pert_time_expr must NOT be in expr_cols."""
+        import pandas as pd
+
+        df = pd.DataFrame({
+            "compound_id": ["BRD-K001", "BRD-K002"],
+            "gene_A_expr": [1.0, 2.0],
+            "gene_B_expr": [3.0, 4.0],
+            "pert_dose_expr": [10.0, 5.0],
+            "pert_time_expr": [24.0, 48.0],
+        })
+        numeric_cols = set(df.select_dtypes(include="number").columns)
+        _METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
+        expr_cols = [
+            c for c in df.columns
+            if c != "compound_id"
+            and c.endswith("_expr")
+            and c in numeric_cols
+            and not any(c.startswith(p) for p in _METADATA_PREFIXES)
+        ]
+        assert "pert_dose_expr" not in expr_cols
+        assert "pert_time_expr" not in expr_cols
+        assert "gene_A_expr" in expr_cols
+        assert "gene_B_expr" in expr_cols
+        assert len(expr_cols) == 2
