@@ -641,6 +641,16 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         len(expr_cols),
         len(df.columns),
     )
+    if len(morph_cols) < 100:
+        logger.warning(
+            "Suspiciously few morph features: %d (expected ~1000 CellProfiler features).",
+            len(morph_cols),
+        )
+    if len(expr_cols) < 900:
+        logger.warning(
+            "Suspiciously few expr features: %d (expected 978 L1000 landmark genes).",
+            len(expr_cols),
+        )
 
     # 5. Remove controls
     df = remove_controls(df)
