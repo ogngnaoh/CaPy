@@ -62,7 +62,7 @@ class CosineAnnealingWithWarmup(LambdaLR):
 
         def lr_lambda(epoch: int) -> float:
             if epoch < warmup_epochs:
-                return epoch / max(1, warmup_epochs)
+                return (epoch + 1) / warmup_epochs
             progress = (epoch - warmup_epochs) / max(1, total_epochs - warmup_epochs)
             return 0.5 * (1.0 + math.cos(math.pi * progress))
 

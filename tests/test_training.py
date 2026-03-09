@@ -146,20 +146,22 @@ class TestCosineAnnealingWithWarmup:
         return torch.optim.SGD([param], lr=base_lr)
 
     def test_warmup_linear(self) -> None:
-        """LR at epoch i during warmup = base_lr × i/warmup."""
+        """LR at epoch i during warmup = base_lr × (i+1)/warmup."""
         from src.training.scheduler import CosineAnnealingWithWarmup
 
         base_lr = 0.1
-        warmup = 5
+        warmup_epochs = 5
         optimizer = self._make_optimizer(base_lr)
-        scheduler = CosineAnnealingWithWarmup(optimizer, warmup, 20)
+        scheduler = CosineAnnealingWithWarmup(optimizer, warmup_epochs, 20)
 
-        # Epoch 0: LR = base_lr * 0/5 = 0
-        assert optimizer.param_groups[0]["lr"] == pytest.approx(0.0, abs=1e-7)
+        # Epoch 0: LR = base_lr * 1/5 (non-zero from the start)
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(
+            base_lr / warmup_epochs, rel=1e-5
+        )
 
-        for epoch in range(1, warmup):
+        for epoch in range(1, warmup_epochs):
             scheduler.step()
-            expected = base_lr * epoch / warmup
+            expected = base_lr * (epoch + 1) / warmup_epochs
             assert optimizer.param_groups[0]["lr"] == pytest.approx(expected, rel=1e-5)
 
     def test_cosine_decay(self) -> None:
@@ -225,10 +227,10 @@ class TestCosineAnnealingWithWarmup:
             total_epochs=10,
         )
 
-        # After 1 warmup step
+        # After 1 warmup step (epoch=1): LR = base_lr * (1+1)/2 = base_lr
         scheduler.step()
-        assert optimizer.param_groups[0]["lr"] == pytest.approx(0.1 * 1 / 2, rel=1e-5)
-        assert optimizer.param_groups[1]["lr"] == pytest.approx(0.01 * 1 / 2, rel=1e-5)
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(0.1 * 2 / 2, rel=1e-5)
+        assert optimizer.param_groups[1]["lr"] == pytest.approx(0.01 * 2 / 2, rel=1e-5)
 
 
 # ---------------------------------------------------------------------------
