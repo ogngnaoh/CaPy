@@ -154,6 +154,8 @@ def feature_qc(
         for c in cols:
             if c not in df.columns:
                 continue
+            if not _pd.api.types.is_numeric_dtype(df[c]):
+                continue
             nan_frac = stats_df[c].isna().mean()
             if nan_frac > nan_threshold:
                 continue
@@ -568,22 +570,28 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     # 3. Match compounds across modalities
     df = match_compounds(morph_df, expr_df, metadata_df=metadata_df)
 
-    # 4. Identify feature columns
+    # 4. Identify feature columns (numeric only — exclude string metadata
+    # that gets suffixed during the morph/expr merge, e.g. pert_type_morph).
+    numeric_cols = set(df.select_dtypes(include="number").columns)
     morph_cols = [
         c
         for c in df.columns
-        if not c.startswith("Metadata_") and c != "compound_id" and c.endswith("_morph")
+        if not c.startswith("Metadata_")
+        and c != "compound_id"
+        and c.endswith("_morph")
+        and c in numeric_cols
     ]
-    expr_cols = [c for c in df.columns if c != "compound_id" and c.endswith("_expr")]
+    expr_cols = [
+        c
+        for c in df.columns
+        if c != "compound_id" and c.endswith("_expr") and c in numeric_cols
+    ]
     # Fallback: if suffix-based detection yields nothing, use heuristics
     if not morph_cols:
         morph_cols = [
             c for c in df.columns if c.startswith(("Cells_", "Nuclei_", "Cytoplasm_"))
         ]
     if not expr_cols:
-        # Expression columns are gene names — not starting with Metadata_
-        # Only include numeric columns to avoid string metadata (e.g. pert_type).
-        numeric_cols = set(df.select_dtypes(include="number").columns)
         non_meta = [
             c
             for c in df.columns
@@ -595,6 +603,12 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
             and c in numeric_cols
         ]
         expr_cols = non_meta
+    logger.info(
+        "Feature columns: %d morph, %d expr (from %d total columns).",
+        len(morph_cols),
+        len(expr_cols),
+        len(df.columns),
+    )
 
     # 5. Remove controls
     df = remove_controls(df)

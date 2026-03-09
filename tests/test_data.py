@@ -471,9 +471,7 @@ class TestPreprocess:
         )
         numeric_cols = set(df.select_dtypes(include="number").columns)
         morph_cols = [
-            c
-            for c in df.columns
-            if c.startswith(("Cells_", "Nuclei_", "Cytoplasm_"))
+            c for c in df.columns if c.startswith(("Cells_", "Nuclei_", "Cytoplasm_"))
         ]
         non_meta = [
             c
@@ -487,6 +485,71 @@ class TestPreprocess:
         ]
         assert "gene_A" in non_meta
         assert "pert_type" not in non_meta
+
+    @requires_pandas
+    def test_primary_detection_excludes_string_suffixed_cols(self) -> None:
+        """Primary _morph/_expr suffix detection must skip non-numeric columns.
+
+        After merge with suffixes=("_morph", "_expr"), string columns like
+        pert_type become pert_type_morph / pert_type_expr.  These must be
+        excluded from feature column lists to prevent TypeError in feature_qc.
+        """
+        import pandas as pd
+
+        # Simulate a merged DataFrame with string cols that got suffixed
+        df = pd.DataFrame(
+            {
+                "compound_id": ["BRD-001", "BRD-002", "BRD-003"],
+                "feat_a_morph": [1.0, 2.0, 3.0],
+                "pert_type_morph": ["trt", "trt", "trt"],  # string!
+                "gene_x_expr": [0.5, 0.6, 0.7],
+                "pert_type_expr": ["trt_cp", "trt_cp", "trt_cp"],  # string!
+            }
+        )
+        numeric_cols = set(df.select_dtypes(include="number").columns)
+        morph_cols = [
+            c
+            for c in df.columns
+            if not c.startswith("Metadata_")
+            and c != "compound_id"
+            and c.endswith("_morph")
+            and c in numeric_cols
+        ]
+        expr_cols = [
+            c
+            for c in df.columns
+            if c != "compound_id" and c.endswith("_expr") and c in numeric_cols
+        ]
+        assert "feat_a_morph" in morph_cols
+        assert "pert_type_morph" not in morph_cols
+        assert "gene_x_expr" in expr_cols
+        assert "pert_type_expr" not in expr_cols
+
+    @requires_pandas
+    @requires_numpy
+    def test_feature_qc_skips_non_numeric_cols(self) -> None:
+        """feature_qc should not crash when given non-numeric columns."""
+        import pandas as pd
+
+        from src.data.preprocess import feature_qc
+
+        df = pd.DataFrame(
+            {
+                "feat_a": [1.0, 2.0, 3.0, 4.0],
+                "str_col": ["a", "b", "c", "d"],  # non-numeric
+                "expr_a": [0.1, 0.2, 0.3, 0.4],
+            }
+        )
+        # Pass the string column as if it were a morph feature
+        _, morph_kept, expr_kept = feature_qc(
+            df,
+            morph_cols=["feat_a", "str_col"],
+            expr_cols=["expr_a"],
+            nan_threshold=0.5,
+        )
+        assert "feat_a" in morph_kept
+        assert "str_col" not in morph_kept
+        assert "expr_a" in expr_kept
 
     @requires_pandas
     @requires_rdkit
