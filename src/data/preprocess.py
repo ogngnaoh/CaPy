@@ -436,16 +436,29 @@ def match_compounds(
     )
 
     if metadata_df is not None:
-        if "broad_id" in metadata_df.columns:
-            metadata_df = metadata_df.rename(columns={"broad_id": "compound_id"})
-        if "compound_id" not in metadata_df.columns:
+        # Find the compound ID column in metadata
+        meta_id_col = None
+        for candidate in ("broad_id", "compound_id"):
+            if candidate in metadata_df.columns:
+                meta_id_col = candidate
+                break
+
+        if meta_id_col is None:
             logger.warning(
-                "Metadata has no 'compound_id' or 'broad_id' column "
+                "Metadata has no 'broad_id' or 'compound_id' column "
                 "(columns: %s). Skipping metadata merge.",
                 list(metadata_df.columns[:5]),
             )
         else:
-            merged = merged.merge(metadata_df, on="compound_id", how="left")
+            merged = merged.merge(
+                metadata_df,
+                left_on="compound_id",
+                right_on=meta_id_col,
+                how="left",
+            )
+            # Drop the duplicate ID column from metadata if different name
+            if meta_id_col != "compound_id" and meta_id_col in merged.columns:
+                merged = merged.drop(columns=[meta_id_col])
 
     return merged
 
@@ -520,7 +533,14 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     metadata_df = None
     metadata_path = raw_dir / "metadata" / "repurposing_samples.txt"
     if metadata_path.exists():
-        metadata_df = _pd.read_csv(metadata_path, sep="\t", comment="!")
+        # Skip !-prefixed comment/header lines (the CLUE repurposing file
+        # has 9 such lines).  We avoid pandas comment="!" because that
+        # parameter also strips text after ! inside data cells, corrupting rows.
+        import io
+
+        with open(metadata_path) as fh:
+            clean_lines = [line for line in fh if not line.startswith("!")]
+        metadata_df = _pd.read_csv(io.StringIO("".join(clean_lines)), sep="\t")
         logger.info("Loaded compound metadata: %d rows from %s", len(metadata_df), metadata_path)
     else:
         logger.warning("Compound metadata not found at %s — SMILES may be missing.", metadata_path)
