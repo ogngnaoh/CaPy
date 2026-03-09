@@ -450,15 +450,18 @@ def match_compounds(
                 list(metadata_df.columns[:5]),
             )
         else:
-            merged = merged.merge(
-                metadata_df,
-                left_on="compound_id",
-                right_on=meta_id_col,
-                how="left",
+            # Use .map() instead of .merge() to avoid pandas merge internals
+            # that fail with KeyError on certain DataFrame states (pandas 2.x).
+            meta_dedup = metadata_df.drop_duplicates(subset=meta_id_col)
+            meta_indexed = meta_dedup.set_index(meta_id_col)
+            new_cols = [c for c in meta_indexed.columns if c not in merged.columns]
+            for col in new_cols:
+                merged[col] = merged["compound_id"].map(meta_indexed[col])
+            n_matched = merged[new_cols[0]].notna().sum() if new_cols else 0
+            logger.info(
+                "Metadata mapped: %d/%d compounds matched via %s.",
+                n_matched, len(merged), meta_id_col,
             )
-            # Drop the duplicate ID column from metadata if different name
-            if meta_id_col != "compound_id" and meta_id_col in merged.columns:
-                merged = merged.drop(columns=[meta_id_col])
 
     return merged
 
@@ -542,6 +545,11 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
             clean_lines = [line for line in fh if not line.startswith("!")]
         metadata_df = _pd.read_csv(io.StringIO("".join(clean_lines)), sep="\t")
         logger.info("Loaded compound metadata: %d rows from %s", len(metadata_df), metadata_path)
+        logger.info(
+            "Metadata columns: %s (shape=%s)",
+            list(metadata_df.columns[:6]),
+            metadata_df.shape,
+        )
     else:
         logger.warning("Compound metadata not found at %s — SMILES may be missing.", metadata_path)
 

@@ -424,6 +424,33 @@ class TestPreprocess:
         assert np.isclose(cpd2["feat_b"], 150.0)  # median of [100, 200]
 
     @requires_pandas
+    def test_match_compounds_with_metadata(self) -> None:
+        """match_compounds should map metadata columns via compound ID."""
+        import pandas as pd
+
+        from src.data.preprocess import match_compounds
+
+        morph_df = pd.DataFrame({
+            "Metadata_broad_sample": ["BRD-001", "BRD-002", "BRD-003"],
+            "feat_a": [1.0, 2.0, 3.0],
+        })
+        expr_df = pd.DataFrame({
+            "pert_id": ["BRD-001", "BRD-002", "BRD-003"],
+            "gene_x": [0.5, 0.6, 0.7],
+        })
+        metadata_df = pd.DataFrame({
+            "broad_id": ["BRD-001", "BRD-002", "BRD-003"],
+            "smiles": ["CCO", "c1ccccc1", "CC(=O)O"],
+            "pert_iname": ["ethanol", "benzene", "acetic_acid"],
+        })
+
+        result = match_compounds(morph_df, expr_df, metadata_df=metadata_df)
+        assert len(result) == 3
+        assert "smiles" in result.columns
+        assert "compound_id" in result.columns
+        assert result["smiles"].notna().all()
+
+    @requires_pandas
     @requires_rdkit
     def test_scaffold_split_no_leakage(self) -> None:
         """No scaffold should appear in more than one split."""
