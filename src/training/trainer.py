@@ -129,6 +129,11 @@ class Trainer:
             if self.val_loader is not None:
                 val_metrics = self._validate(epoch)
 
+                if not val_metrics:
+                    # Empty val loader — skip early stopping for this epoch
+                    self.scheduler.step()
+                    continue
+
                 # Early stopping check
                 current = val_metrics.get(self.early_stopping_metric, -math.inf)
                 if current > self._best_metric:
@@ -209,6 +214,11 @@ class Trainer:
             if self._global_step % self.log_every_n_steps == 0:
                 log_metrics(loss_dict, step=self._global_step, prefix="train/")
 
+        if n_batches == 0:
+            logger.warning(
+                "Epoch %d: train_loader yielded 0 batches — is the dataset empty?",
+                epoch,
+            )
         mean_loss = total_loss / max(1, n_batches)
         return mean_loss
 
@@ -245,6 +255,10 @@ class Trainer:
             all_z_mol.append(outputs["z_mol"])
             all_z_morph.append(outputs["z_morph"])
             all_z_expr.append(outputs["z_expr"])
+
+        if not all_z_mol:
+            logger.warning("Validation loader yielded 0 batches — skipping metrics.")
+            return {}
 
         z_mol = torch.cat(all_z_mol, dim=0).float()
         z_morph = torch.cat(all_z_morph, dim=0).float()

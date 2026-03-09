@@ -81,6 +81,8 @@ class CaPyDataset:
         _ensure_imports()
         assert len(mol_graphs) == morph_features.shape[0] == expr_features.shape[0]
         assert len(compound_ids) == len(mol_graphs)
+        if len(mol_graphs) == 0:
+            logger.warning("CaPyDataset created with 0 compounds.")
 
         self.mol_graphs = mol_graphs
         self.morph_features = morph_features
@@ -170,9 +172,17 @@ def load_split_dataset(
 
     # Load split data
     df = pd.read_parquet(processed_dir / f"{split}.parquet")
+    n_before = len(df)
 
     # Filter to compounds that have graphs
     df = df.loc[df["compound_id"].isin(mol_graphs)].reset_index(drop=True)
+    if len(df) < n_before:
+        logger.warning(
+            "%s split: %d/%d compounds dropped (missing molecular graphs).",
+            split,
+            n_before - len(df),
+            n_before,
+        )
 
     graphs = [mol_graphs[cid] for cid in df["compound_id"]]
     morph = _torch.tensor(df[morph_cols].values, dtype=_torch.float32)

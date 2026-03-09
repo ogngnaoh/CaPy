@@ -175,7 +175,15 @@ def feature_qc(
     )
     # Drop rows with remaining NaNs in kept features
     all_kept = morph_kept + expr_kept
+    n_before = len(df)
     df = df.dropna(subset=all_kept).copy()
+    if len(df) < n_before:
+        logger.info(
+            "feature_qc: dropped %d rows with NaN in kept features.",
+            n_before - len(df),
+        )
+    if len(df) == 0:
+        logger.warning("feature_qc: ALL rows dropped — 0 compounds remain.")
     return df, morph_kept, expr_kept
 
 
@@ -498,6 +506,12 @@ def save_processed_data(
     result: dict[str, Path] = {}
     for split_name in ["train", "val", "test"]:
         split_df = df.loc[df["split"] == split_name]
+        if len(split_df) == 0:
+            logger.warning(
+                "Split '%s' has 0 rows — downstream loading will produce "
+                "an empty dataset.",
+                split_name,
+            )
         path = output_dir / f"{split_name}.parquet"
         split_df.to_parquet(path, index=False)
         result[split_name] = path

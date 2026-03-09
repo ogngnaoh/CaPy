@@ -115,6 +115,14 @@ def main() -> None:
     train_ds = load_split_dataset(processed_dir, "train", mol_graphs)
     val_ds = load_split_dataset(processed_dir, "val", mol_graphs)
 
+    if len(train_ds) == 0:
+        raise ValueError(
+            "Training dataset is empty — cannot train. "
+            "Check preprocessing logs for dropped compounds."
+        )
+    if len(val_ds) == 0:
+        logger.warning("Validation dataset is empty — early stopping will be disabled.")
+
     # 7. Build DataLoaders
     train_loader = DataLoader(
         train_ds,
@@ -125,20 +133,22 @@ def main() -> None:
         num_workers=2,
         persistent_workers=True,
     )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=cfg.training.batch_size,
-        shuffle=False,
-        collate_fn=capy_collate_fn,
-        drop_last=False,
-        num_workers=2,
-        persistent_workers=True,
-    )
+    val_loader = None
+    if len(val_ds) > 0:
+        val_loader = DataLoader(
+            val_ds,
+            batch_size=cfg.training.batch_size,
+            shuffle=False,
+            collate_fn=capy_collate_fn,
+            drop_last=False,
+            num_workers=2,
+            persistent_workers=True,
+        )
 
     logger.info(
-        "DataLoaders: train=%d batches, val=%d batches",
+        "DataLoaders: train=%d batches, val=%s batches",
         len(train_loader),
-        len(val_loader),
+        len(val_loader) if val_loader else 0,
     )
 
     # 8. Create model

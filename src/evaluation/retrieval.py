@@ -75,6 +75,9 @@ def compute_retrieval_metrics(
     if ks is None:
         ks = [1, 5, 10]
 
+    if z_a.shape[0] == 0:
+        return {f"R@{k}": 0.0 for k in ks} | {"MRR": 0.0}
+
     # N×N cosine similarity (dot product for L2-normalized vectors)
     sim = z_a @ z_b.T  # [N, N]
 

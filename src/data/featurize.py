@@ -277,4 +277,9 @@ def featurize_dataset(
         len(smiles_list),
         failed,
     )
+    if len(graphs) == 0 and len(smiles_list) > 0:
+        raise ValueError(
+            f"All {len(smiles_list)} SMILES failed to featurize. "
+            "Check that SMILES are valid and rdkit is installed correctly."
+        )
     return graphs
