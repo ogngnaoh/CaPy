@@ -777,3 +777,38 @@ class TestFeatureDetection:
         assert "gene_A_expr" in expr_cols
         assert "gene_B_expr" in expr_cols
         assert len(expr_cols) == 2
+
+    @requires_pandas
+    def test_morph_cols_includes_cellprofiler_features(self) -> None:
+        """CellProfiler columns (Cells_, Nuclei_, Cytoplasm_) must be in morph_cols."""
+        import pandas as pd
+
+        df = pd.DataFrame({
+            "compound_id": ["BRD-K001", "BRD-K002"],
+            "Cells_AreaShape_Area": [100.0, 200.0],
+            "Nuclei_Texture_Entropy": [0.5, 0.6],
+            "Cytoplasm_Intensity_Mean": [300.0, 400.0],
+            "shared_col_morph": [1.0, 2.0],
+            "pert_type_morph": ["trt_cp", "trt_cp"],
+        })
+        numeric_cols = set(df.select_dtypes(include="number").columns)
+        _CELLPROFILER_PREFIXES = ("Cells_", "Nuclei_", "Cytoplasm_")
+        _METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
+        morph_cols = [
+            c for c in df.columns
+            if c in numeric_cols
+            and c != "compound_id"
+            and (
+                c.startswith(_CELLPROFILER_PREFIXES)
+                or (
+                    c.endswith("_morph")
+                    and not any(c.startswith(p) for p in _METADATA_PREFIXES)
+                )
+            )
+        ]
+        assert "Cells_AreaShape_Area" in morph_cols
+        assert "Nuclei_Texture_Entropy" in morph_cols
+        assert "Cytoplasm_Intensity_Mean" in morph_cols
+        assert "shared_col_morph" in morph_cols
+        assert "pert_type_morph" not in morph_cols
+        assert len(morph_cols) == 4

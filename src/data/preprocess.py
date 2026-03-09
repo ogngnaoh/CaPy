@@ -611,13 +611,21 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     # 4. Identify feature columns (numeric only — exclude string metadata
     # that gets suffixed during the morph/expr merge, e.g. pert_type_morph).
     numeric_cols = set(df.select_dtypes(include="number").columns)
+    _CELLPROFILER_PREFIXES = ("Cells_", "Nuclei_", "Cytoplasm_")
     morph_cols = [
         c
         for c in df.columns
-        if not c.startswith("Metadata_")
+        if c in numeric_cols
         and c != "compound_id"
-        and c.endswith("_morph")
-        and c in numeric_cols
+        and (
+            # CellProfiler features (unique to morph — no suffix from merge)
+            c.startswith(_CELLPROFILER_PREFIXES)
+            or (
+                # Overlapping numeric columns that got _morph suffix
+                c.endswith("_morph")
+                and not any(c.startswith(p) for p in _METADATA_PREFIXES)
+            )
+        )
     ]
     expr_cols = [
         c
@@ -627,23 +635,6 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         and c in numeric_cols
         and not any(c.startswith(p) for p in _METADATA_PREFIXES)
     ]
-    # Fallback: if suffix-based detection yields nothing, use heuristics
-    if not morph_cols:
-        morph_cols = [
-            c for c in df.columns if c.startswith(("Cells_", "Nuclei_", "Cytoplasm_"))
-        ]
-    if not expr_cols:
-        non_meta = [
-            c
-            for c in df.columns
-            if not c.startswith("Metadata_")
-            and c != "compound_id"
-            and c not in morph_cols
-            and c != "smiles"
-            and c != "split"
-            and c in numeric_cols
-        ]
-        expr_cols = non_meta
     logger.info(
         "Feature columns: %d morph, %d expr (from %d total columns).",
         len(morph_cols),
