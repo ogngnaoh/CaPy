@@ -432,19 +432,31 @@ class TestPreprocess:
 
         morph_df = pd.DataFrame(
             {
-                "Metadata_broad_sample": ["BRD-001", "BRD-002", "BRD-003"],
+                "Metadata_broad_sample": [
+                    "BRD-K12345678",
+                    "BRD-K23456789",
+                    "BRD-K34567890",
+                ],
                 "feat_a": [1.0, 2.0, 3.0],
             }
         )
         expr_df = pd.DataFrame(
             {
-                "pert_id": ["BRD-001", "BRD-002", "BRD-003"],
+                "pert_id": [
+                    "BRD-K12345678",
+                    "BRD-K23456789",
+                    "BRD-K34567890",
+                ],
                 "gene_x": [0.5, 0.6, 0.7],
             }
         )
         metadata_df = pd.DataFrame(
             {
-                "broad_id": ["BRD-001", "BRD-002", "BRD-003"],
+                "broad_id": [
+                    "BRD-K12345678",
+                    "BRD-K23456789",
+                    "BRD-K34567890",
+                ],
                 "smiles": ["CCO", "c1ccccc1", "CC(=O)O"],
                 "pert_iname": ["ethanol", "benzene", "acetic_acid"],
             }
@@ -455,6 +467,43 @@ class TestPreprocess:
         assert "smiles" in result.columns
         assert "compound_id" in result.columns
         assert result["smiles"].notna().all()
+
+    @requires_pandas
+    def test_match_compounds_normalizes_brd_ids(self) -> None:
+        """Metadata with long BRD IDs should match short compound IDs."""
+        import pandas as pd
+
+        from src.data.preprocess import match_compounds
+
+        # Morph/expr use short BRD IDs
+        morph_df = pd.DataFrame(
+            {
+                "Metadata_broad_sample": ["BRD-K12345678", "BRD-K23456789"],
+                "feat_a": [1.0, 2.0],
+            }
+        )
+        expr_df = pd.DataFrame(
+            {
+                "pert_id": ["BRD-K12345678", "BRD-K23456789"],
+                "gene_x": [0.5, 0.6],
+            }
+        )
+        # Metadata uses long BRD IDs (with batch/plate suffix)
+        metadata_df = pd.DataFrame(
+            {
+                "broad_id": [
+                    "BRD-K12345678-001-01-1",
+                    "BRD-K23456789-300-15-9",
+                ],
+                "smiles": ["CCO", "c1ccccc1"],
+                "pert_iname": ["ethanol", "benzene"],
+            }
+        )
+
+        result = match_compounds(morph_df, expr_df, metadata_df=metadata_df)
+        assert len(result) == 2
+        assert result["smiles"].notna().all()
+        assert result["smiles"].tolist() == ["CCO", "c1ccccc1"]
 
     @requires_pandas
     def test_expr_cols_excludes_string_metadata(self) -> None:

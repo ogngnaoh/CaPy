@@ -466,11 +466,31 @@ def match_compounds(
         else:
             # Use .map() instead of .merge() to avoid pandas merge internals
             # that fail with KeyError on certain DataFrame states (pandas 2.x).
-            meta_dedup = metadata_df.drop_duplicates(subset=meta_id_col)
-            meta_indexed = meta_dedup.set_index(meta_id_col)
-            new_cols = [c for c in meta_indexed.columns if c not in merged.columns]
+            #
+            # BRD IDs have variable formats across Broad datasets:
+            #   morph/expr: "BRD-K12345678"  (13-char short form)
+            #   metadata:   "BRD-K12345678-001-01-1"  (long form with batch)
+            # Normalize both sides to the 13-char prefix for matching.
+            def _normalize_brd(s: _pd.Series) -> _pd.Series:
+                return s.astype(str).str.extract(r"^(BRD-[A-Za-z]\d{8})", expand=False)
+
+            meta_dedup = metadata_df.drop_duplicates(subset=meta_id_col).copy()
+            meta_dedup["_norm_id"] = _normalize_brd(meta_dedup[meta_id_col])
+            meta_dedup = meta_dedup.dropna(subset=["_norm_id"]).drop_duplicates(
+                subset="_norm_id"
+            )
+            meta_indexed = meta_dedup.set_index("_norm_id")
+
+            merged["_norm_id"] = _normalize_brd(merged["compound_id"])
+            new_cols = [
+                c
+                for c in meta_indexed.columns
+                if c not in merged.columns and c != meta_id_col
+            ]
             for col in new_cols:
-                merged[col] = merged["compound_id"].map(meta_indexed[col])
+                merged[col] = merged["_norm_id"].map(meta_indexed[col])
+            merged = merged.drop(columns=["_norm_id"])
+
             n_matched = merged[new_cols[0]].notna().sum() if new_cols else 0
             logger.info(
                 "Metadata mapped: %d/%d compounds matched via %s.",
