@@ -227,6 +227,9 @@ def smiles_to_graph(smiles: str) -> Data | None:  # noqa: F821
         cannot be parsed.
     """
     _ensure_imports()
+    if not smiles or not smiles.strip():
+        logger.warning("Could not parse SMILES: %s", smiles)
+        return None
     mol = _Chem.MolFromSmiles(smiles)
     if mol is None:
         logger.warning("Could not parse SMILES: %s", smiles)

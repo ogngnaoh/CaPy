@@ -335,8 +335,10 @@ def load_raw_profiles(
     """
     _ensure_imports()
     raw_dir = Path(raw_dir)
-    morph_path = raw_dir / "morphology" / "CDRP-bio_cpd_median_profiles.csv.gz"
-    expr_path = raw_dir / "expression" / "CDRP-bio_L1000_median_profiles.csv.gz"
+    morph_path = (
+        raw_dir / "morphology" / "replicate_level_cp_normalized_variable_selected.csv.gz"
+    )
+    expr_path = raw_dir / "expression" / "replicate_level_l1k.csv.gz"
 
     logger.info("Loading morphology profiles from %s", morph_path)
     morph_df = _pd.read_csv(morph_path)
@@ -345,6 +347,52 @@ def load_raw_profiles(
     expr_df = _pd.read_csv(expr_path)
 
     return morph_df, expr_df
+
+
+def aggregate_to_compound_level(
+    df: pd.DataFrame,  # noqa: F821
+    compound_col: str,
+) -> pd.DataFrame:  # noqa: F821
+    """Aggregate replicate-level profiles to compound-level medians.
+
+    The Rosetta dataset provides replicate-level measurements.  We take
+    the median across replicates for each compound to get a single
+    robust profile per compound, consistent with standard practice in
+    Cell Painting and L1000 analyses.
+
+    Args:
+        df: Replicate-level DataFrame with a compound identifier column.
+        compound_col: Column name containing compound identifiers to
+            group by.
+
+    Returns:
+        Compound-level DataFrame with median feature values and first
+        occurrence of metadata columns.
+    """
+    _ensure_imports()
+
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    non_numeric_cols = [c for c in df.columns if c not in numeric_cols and c != compound_col]
+
+    n_before = len(df)
+    n_compounds = df[compound_col].nunique()
+
+    # Median for numeric features, first value for metadata
+    agg_dict: dict[str, str] = {}
+    for c in numeric_cols:
+        agg_dict[c] = "median"
+    for c in non_numeric_cols:
+        agg_dict[c] = "first"
+
+    result = df.groupby(compound_col, as_index=False).agg(agg_dict)
+
+    logger.info(
+        "aggregate_to_compound_level: %d replicates -> %d compounds (groupby %s).",
+        n_before,
+        n_compounds,
+        compound_col,
+    )
+    return result
 
 
 def match_compounds(
@@ -454,8 +502,12 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     raw_dir = Path(cfg.data.raw_dir)
     processed_dir = Path(cfg.data.processed_dir)
 
-    # 1. Load raw profiles
+    # 1. Load raw (replicate-level) profiles
     morph_df, expr_df = load_raw_profiles(raw_dir)
+
+    # 1.5 Aggregate replicates to compound-level medians
+    morph_df = aggregate_to_compound_level(morph_df, compound_col="Metadata_broad_sample")
+    expr_df = aggregate_to_compound_level(expr_df, compound_col="pert_id")
 
     # 2. Load compound metadata (SMILES, MOA) if available
     metadata_df = None

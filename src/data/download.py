@@ -28,27 +28,29 @@ S3_BASE = (
     "s3://cellpainting-gallery/cpg0003-rosetta/" "broad/workspace/preprocessed_data/"
 )
 
-# Morphology profiles (CellProfiler, aggregated per compound)
-S3_MORPH = f"{S3_BASE}profiles/CDRP-bio/"
-# Expression profiles (L1000, aggregated per compound)
-S3_EXPR = f"{S3_BASE}profiles/CDRP-bio/"
+# Morphology profiles (CellProfiler, replicate-level)
+S3_MORPH = f"{S3_BASE}CDRPBIO-BBBC036-Bray/CellPainting/"
+# Expression profiles (L1000, replicate-level)
+S3_EXPR = f"{S3_BASE}CDRPBIO-BBBC036-Bray/L1000/"
 
-# HTTP fallback — GitHub Cell Painting Gallery data index
+# HTTP fallback — direct S3 HTTPS URLs
 HTTP_MORPH = (
-    "https://github.com/broadinstitute/cellpainting-gallery/raw/main/"
+    "https://cellpainting-gallery.s3.amazonaws.com/"
     "cpg0003-rosetta/broad/workspace/preprocessed_data/"
-    "profiles/CDRP-bio/CDRP-bio_cpd_median_profiles.csv.gz"
+    "CDRPBIO-BBBC036-Bray/CellPainting/"
+    "replicate_level_cp_normalized_variable_selected.csv.gz"
 )
 HTTP_EXPR = (
-    "https://github.com/broadinstitute/cellpainting-gallery/raw/main/"
+    "https://cellpainting-gallery.s3.amazonaws.com/"
     "cpg0003-rosetta/broad/workspace/preprocessed_data/"
-    "profiles/CDRP-bio/CDRP-bio_L1000_median_profiles.csv.gz"
+    "CDRPBIO-BBBC036-Bray/L1000/"
+    "replicate_level_l1k.csv.gz"
 )
 
-# Broad Repurposing Hub compound metadata
+# Broad CLUE compound metadata
 HTTP_COMPOUND_META = (
-    "https://repo-hub.broadinstitute.org/repurposing/"
-    "download?file=repurposing_samples_20200324.txt"
+    "https://s3.amazonaws.com/data.clue.io/repurposing/downloads/"
+    "repurposing_samples_20200324.txt"
 )
 
 
@@ -154,15 +156,15 @@ def download_rosetta_profiles(
 
     files = {
         "morphology": {
-            "local": output_dir / "morphology" / "CDRP-bio_cpd_median_profiles.csv.gz",
-            "s3": f"{S3_MORPH}CDRP-bio_cpd_median_profiles.csv.gz",
+            "local": output_dir
+            / "morphology"
+            / "replicate_level_cp_normalized_variable_selected.csv.gz",
+            "s3": f"{S3_MORPH}replicate_level_cp_normalized_variable_selected.csv.gz",
             "http": HTTP_MORPH,
         },
         "expression": {
-            "local": output_dir
-            / "expression"
-            / "CDRP-bio_L1000_median_profiles.csv.gz",
-            "s3": f"{S3_EXPR}CDRP-bio_L1000_median_profiles.csv.gz",
+            "local": output_dir / "expression" / "replicate_level_l1k.csv.gz",
+            "s3": f"{S3_EXPR}replicate_level_l1k.csv.gz",
             "http": HTTP_EXPR,
         },
     }

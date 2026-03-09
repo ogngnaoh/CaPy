@@ -62,8 +62,12 @@ class TestDownload:
         from src.data.download import download_rosetta_profiles
 
         # Create fake pre-existing files
-        morph = tmp_path / "morphology" / "CDRP-bio_cpd_median_profiles.csv.gz"
-        expr = tmp_path / "expression" / "CDRP-bio_L1000_median_profiles.csv.gz"
+        morph = (
+            tmp_path
+            / "morphology"
+            / "replicate_level_cp_normalized_variable_selected.csv.gz"
+        )
+        expr = tmp_path / "expression" / "replicate_level_l1k.csv.gz"
         morph.parent.mkdir(parents=True)
         expr.parent.mkdir(parents=True)
         morph.write_text("x" * 2000)
@@ -389,6 +393,35 @@ class TestPreprocess:
         r1 = scaffold_split(df, seed=42)
         r2 = scaffold_split(df, seed=42)
         assert (r1["split"].values == r2["split"].values).all()
+
+    @requires_pandas
+    @requires_numpy
+    def test_aggregate_to_compound_level(self) -> None:
+        """Aggregation should produce median of numeric cols and preserve metadata."""
+        import numpy as np
+        import pandas as pd
+
+        from src.data.preprocess import aggregate_to_compound_level
+
+        df = pd.DataFrame(
+            {
+                "compound_id": ["cpd1", "cpd1", "cpd1", "cpd2", "cpd2"],
+                "feat_a": [1.0, 3.0, 5.0, 10.0, 20.0],
+                "feat_b": [2.0, 4.0, 6.0, 100.0, 200.0],
+                "plate": ["P1", "P2", "P3", "P1", "P2"],
+            }
+        )
+        result = aggregate_to_compound_level(df, compound_col="compound_id")
+        assert len(result) == 2
+
+        cpd1 = result.loc[result["compound_id"] == "cpd1"].iloc[0]
+        assert np.isclose(cpd1["feat_a"], 3.0)  # median of [1, 3, 5]
+        assert np.isclose(cpd1["feat_b"], 4.0)  # median of [2, 4, 6]
+        assert cpd1["plate"] == "P1"  # first value preserved
+
+        cpd2 = result.loc[result["compound_id"] == "cpd2"].iloc[0]
+        assert np.isclose(cpd2["feat_a"], 15.0)  # median of [10, 20]
+        assert np.isclose(cpd2["feat_b"], 150.0)  # median of [100, 200]
 
     @requires_pandas
     @requires_rdkit
