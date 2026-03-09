@@ -430,25 +430,63 @@ class TestPreprocess:
 
         from src.data.preprocess import match_compounds
 
-        morph_df = pd.DataFrame({
-            "Metadata_broad_sample": ["BRD-001", "BRD-002", "BRD-003"],
-            "feat_a": [1.0, 2.0, 3.0],
-        })
-        expr_df = pd.DataFrame({
-            "pert_id": ["BRD-001", "BRD-002", "BRD-003"],
-            "gene_x": [0.5, 0.6, 0.7],
-        })
-        metadata_df = pd.DataFrame({
-            "broad_id": ["BRD-001", "BRD-002", "BRD-003"],
-            "smiles": ["CCO", "c1ccccc1", "CC(=O)O"],
-            "pert_iname": ["ethanol", "benzene", "acetic_acid"],
-        })
+        morph_df = pd.DataFrame(
+            {
+                "Metadata_broad_sample": ["BRD-001", "BRD-002", "BRD-003"],
+                "feat_a": [1.0, 2.0, 3.0],
+            }
+        )
+        expr_df = pd.DataFrame(
+            {
+                "pert_id": ["BRD-001", "BRD-002", "BRD-003"],
+                "gene_x": [0.5, 0.6, 0.7],
+            }
+        )
+        metadata_df = pd.DataFrame(
+            {
+                "broad_id": ["BRD-001", "BRD-002", "BRD-003"],
+                "smiles": ["CCO", "c1ccccc1", "CC(=O)O"],
+                "pert_iname": ["ethanol", "benzene", "acetic_acid"],
+            }
+        )
 
         result = match_compounds(morph_df, expr_df, metadata_df=metadata_df)
         assert len(result) == 3
         assert "smiles" in result.columns
         assert "compound_id" in result.columns
         assert result["smiles"].notna().all()
+
+    @requires_pandas
+    def test_expr_cols_excludes_string_metadata(self) -> None:
+        """Fallback expr_cols detection should skip non-numeric columns."""
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {
+                "compound_id": ["BRD-001", "BRD-002"],
+                "Cells_area": [1.0, 2.0],
+                "gene_A": [0.5, 0.6],
+                "pert_type": ["trt_cp", "trt_cp"],
+            }
+        )
+        numeric_cols = set(df.select_dtypes(include="number").columns)
+        morph_cols = [
+            c
+            for c in df.columns
+            if c.startswith(("Cells_", "Nuclei_", "Cytoplasm_"))
+        ]
+        non_meta = [
+            c
+            for c in df.columns
+            if not c.startswith("Metadata_")
+            and c != "compound_id"
+            and c not in morph_cols
+            and c != "smiles"
+            and c != "split"
+            and c in numeric_cols
+        ]
+        assert "gene_A" in non_meta
+        assert "pert_type" not in non_meta
 
     @requires_pandas
     @requires_rdkit

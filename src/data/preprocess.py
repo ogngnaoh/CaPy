@@ -336,7 +336,9 @@ def load_raw_profiles(
     _ensure_imports()
     raw_dir = Path(raw_dir)
     morph_path = (
-        raw_dir / "morphology" / "replicate_level_cp_normalized_variable_selected.csv.gz"
+        raw_dir
+        / "morphology"
+        / "replicate_level_cp_normalized_variable_selected.csv.gz"
     )
     expr_path = raw_dir / "expression" / "replicate_level_l1k.csv.gz"
 
@@ -372,7 +374,9 @@ def aggregate_to_compound_level(
     _ensure_imports()
 
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
-    non_numeric_cols = [c for c in df.columns if c not in numeric_cols and c != compound_col]
+    non_numeric_cols = [
+        c for c in df.columns if c not in numeric_cols and c != compound_col
+    ]
 
     n_before = len(df)
     n_compounds = df[compound_col].nunique()
@@ -460,7 +464,9 @@ def match_compounds(
             n_matched = merged[new_cols[0]].notna().sum() if new_cols else 0
             logger.info(
                 "Metadata mapped: %d/%d compounds matched via %s.",
-                n_matched, len(merged), meta_id_col,
+                n_matched,
+                len(merged),
+                meta_id_col,
             )
 
     return merged
@@ -529,7 +535,9 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     morph_df, expr_df = load_raw_profiles(raw_dir)
 
     # 1.5 Aggregate replicates to compound-level medians
-    morph_df = aggregate_to_compound_level(morph_df, compound_col="Metadata_broad_sample")
+    morph_df = aggregate_to_compound_level(
+        morph_df, compound_col="Metadata_broad_sample"
+    )
     expr_df = aggregate_to_compound_level(expr_df, compound_col="pert_id")
 
     # 2. Load compound metadata (SMILES, MOA) if available
@@ -544,14 +552,18 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         with open(metadata_path) as fh:
             clean_lines = [line for line in fh if not line.startswith("!")]
         metadata_df = _pd.read_csv(io.StringIO("".join(clean_lines)), sep="\t")
-        logger.info("Loaded compound metadata: %d rows from %s", len(metadata_df), metadata_path)
+        logger.info(
+            "Loaded compound metadata: %d rows from %s", len(metadata_df), metadata_path
+        )
         logger.info(
             "Metadata columns: %s (shape=%s)",
             list(metadata_df.columns[:6]),
             metadata_df.shape,
         )
     else:
-        logger.warning("Compound metadata not found at %s — SMILES may be missing.", metadata_path)
+        logger.warning(
+            "Compound metadata not found at %s — SMILES may be missing.", metadata_path
+        )
 
     # 3. Match compounds across modalities
     df = match_compounds(morph_df, expr_df, metadata_df=metadata_df)
@@ -570,6 +582,8 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         ]
     if not expr_cols:
         # Expression columns are gene names — not starting with Metadata_
+        # Only include numeric columns to avoid string metadata (e.g. pert_type).
+        numeric_cols = set(df.select_dtypes(include="number").columns)
         non_meta = [
             c
             for c in df.columns
@@ -578,6 +592,7 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
             and c not in morph_cols
             and c != "smiles"
             and c != "split"
+            and c in numeric_cols
         ]
         expr_cols = non_meta
 
