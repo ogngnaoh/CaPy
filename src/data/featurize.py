@@ -234,6 +234,9 @@ def smiles_to_graph(smiles: str) -> Data | None:  # noqa: F821
     if mol is None:
         logger.warning("Could not parse SMILES: %s", smiles)
         return None
+    if mol.GetNumAtoms() == 0:
+        logger.warning("Molecule parsed to 0 atoms: %s", smiles)
+        return None
 
     x = featurize_atoms(mol)
     edge_index, edge_attr = featurize_bonds(mol)

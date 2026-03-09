@@ -193,6 +193,17 @@ class TestFeaturize:
             assert isinstance(d, int)
             assert d > 0
 
+    @requires_torch
+    @requires_rdkit
+    def test_zero_atom_guard(self) -> None:
+        """smiles_to_graph returns None for molecules that parse to 0 atoms."""
+        from src.data.featurize import smiles_to_graph
+
+        for smiles in ["CCO", "c1ccccc1", "", "invalid_smiles"]:
+            result = smiles_to_graph(smiles)
+            if result is not None:
+                assert result.x.shape[0] > 0, f"Got 0-atom graph for: {smiles}"
+
     @requires_rdkit
     @requires_torch
     def test_atom_features_in_range(self) -> None:
