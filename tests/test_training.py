@@ -330,6 +330,28 @@ class TestTrainer:
         epoch = trainer2.load_checkpoint(ckpt_path)
         assert epoch == 0
 
+    def test_train_one_epoch_logs_embedding_stats(self) -> None:
+        """_train_one_epoch should return per-modality embedding diagnostics."""
+        import math
+
+        from src.training.trainer import Trainer
+
+        cfg, model, train_loader, val_loader, optimizer, scheduler, device = (
+            _make_synthetic_setup()
+        )
+        trainer = Trainer(
+            cfg, model, train_loader, val_loader, optimizer, scheduler, device
+        )
+        stats = trainer._train_one_epoch(0)
+
+        for mod in ["mol", "morph", "expr"]:
+            assert f"embed_{mod}_norm_mean" in stats, f"Missing embed_{mod}_norm_mean"
+            assert f"embed_{mod}_cos_std" in stats, f"Missing embed_{mod}_cos_std"
+
+        for key in stats:
+            if key.startswith("embed_"):
+                assert math.isfinite(stats[key]), f"{key} is not finite: {stats[key]}"
+
     def test_no_val_skips_early_stopping(self) -> None:
         """val_loader=None → runs all epochs without error."""
         from src.training.trainer import Trainer

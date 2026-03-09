@@ -203,6 +203,14 @@ class Trainer:
         n_batches = 0
         last_loss_dict: dict[str, float] = {}
 
+        # Accumulate per-modality embedding statistics for collapse detection
+        embed_norms: dict[str, list[float]] = {
+            f"embed_{mod}_norm_mean": [] for mod in ["mol", "morph", "expr"]
+        }
+        embed_cos: dict[str, list[float]] = {
+            f"embed_{mod}_cos_std": [] for mod in ["mol", "morph", "expr"]
+        }
+
         for batch_graphs, morph, expr in self.train_loader:
             batch_graphs = batch_graphs.to(self.device)
             morph = morph.to(self.device)
@@ -217,6 +225,27 @@ class Trainer:
                 loss, loss_dict = self.model.compute_loss(
                     outputs["z_mol"], outputs["z_morph"], outputs["z_expr"]
                 )
+
+            # Per-modality embedding diagnostics (detached, no grad impact)
+            with torch.no_grad():
+                for mod_name, z in [
+                    ("mol", outputs["z_mol"]),
+                    ("morph", outputs["z_morph"]),
+                    ("expr", outputs["z_expr"]),
+                ]:
+                    embed_norms[f"embed_{mod_name}_norm_mean"].append(
+                        z.norm(dim=-1).mean().item()
+                    )
+                    if z.size(0) > 1:
+                        sim = z @ z.T
+                        mask = torch.triu(
+                            torch.ones_like(sim, dtype=torch.bool), diagonal=1
+                        )
+                        embed_cos[f"embed_{mod_name}_cos_std"].append(
+                            sim[mask].std().item()
+                        )
+                    else:
+                        embed_cos[f"embed_{mod_name}_cos_std"].append(0.0)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -258,6 +287,11 @@ class Trainer:
         for k, v in last_loss_dict.items():
             if k != "total_loss":
                 epoch_stats[k] = v
+
+        # Average embedding stats across batches
+        for key, values in {**embed_norms, **embed_cos}.items():
+            if values:
+                epoch_stats[key] = sum(values) / len(values)
 
         return epoch_stats
 
