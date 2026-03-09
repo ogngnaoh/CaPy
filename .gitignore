@@ -31,3 +31,4 @@ env/
 SCRATCHPAD.md
 .DS_Store
 *.log
+.worktrees/
