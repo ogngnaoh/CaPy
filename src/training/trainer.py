@@ -90,6 +90,10 @@ class Trainer:
         self.early_stopping_metric: str = cfg.training.early_stopping_metric
         self.retrieval_ks: list[int] = list(cfg.evaluation.retrieval_ks)
 
+        # Mixed precision (bf16) — safe on H100 without GradScaler
+        self.use_amp: bool = getattr(cfg.training, "use_amp", False)
+        self.amp_dtype = torch.bfloat16 if self.use_amp else None
+
         # Tracking state
         self._best_metric: float = -math.inf
         self._patience_counter: int = 0
@@ -111,7 +115,12 @@ class Trainer:
         Returns:
             Dict of best validation metrics (empty if no val_loader).
         """
-        logger.info("Starting training: %d epochs, device=%s", self.epochs, self.device)
+        logger.info(
+            "Starting training: %d epochs, device=%s, amp=%s",
+            self.epochs,
+            self.device,
+            self.amp_dtype if self.use_amp else "off",
+        )
 
         for epoch in range(start_epoch, self.epochs):
             train_loss = self._train_one_epoch(epoch)
@@ -178,10 +187,15 @@ class Trainer:
             morph = morph.to(self.device)
             expr = expr.to(self.device)
 
-            outputs = self.model(batch_graphs, morph, expr)
-            loss, loss_dict = self.model.compute_loss(
-                outputs["z_mol"], outputs["z_morph"], outputs["z_expr"]
-            )
+            with torch.amp.autocast(
+                device_type="cuda",
+                dtype=self.amp_dtype,
+                enabled=self.use_amp,
+            ):
+                outputs = self.model(batch_graphs, morph, expr)
+                loss, loss_dict = self.model.compute_loss(
+                    outputs["z_mol"], outputs["z_morph"], outputs["z_expr"]
+                )
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -222,21 +236,26 @@ class Trainer:
             morph = morph.to(self.device)
             expr = expr.to(self.device)
 
-            outputs = self.model(batch_graphs, morph, expr)
+            with torch.amp.autocast(
+                device_type="cuda",
+                dtype=self.amp_dtype,
+                enabled=self.use_amp,
+            ):
+                outputs = self.model(batch_graphs, morph, expr)
             all_z_mol.append(outputs["z_mol"])
             all_z_morph.append(outputs["z_morph"])
             all_z_expr.append(outputs["z_expr"])
 
-        z_mol = torch.cat(all_z_mol, dim=0)
-        z_morph = torch.cat(all_z_morph, dim=0)
-        z_expr = torch.cat(all_z_expr, dim=0)
+        z_mol = torch.cat(all_z_mol, dim=0).float()
+        z_morph = torch.cat(all_z_morph, dim=0).float()
+        z_expr = torch.cat(all_z_expr, dim=0).float()
 
         # Retrieval metrics
         retrieval_metrics = evaluate_all_retrieval(
             z_mol, z_morph, z_expr, ks=self.retrieval_ks
         )
 
-        # Validation loss (single pass over concatenated embeddings)
+        # Validation loss in fp32 for reliable early-stopping signal
         _, loss_dict = self.model.compute_loss(z_mol, z_morph, z_expr)
 
         val_loss = {f"val_{k}": v for k, v in loss_dict.items()}

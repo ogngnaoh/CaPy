@@ -73,8 +73,12 @@ def main() -> None:
     # 2. Setup wandb
     setup_wandb(cfg)
 
-    # 3. Device
+    # 3. Device and GPU optimizations
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        logger.info("TF32 enabled for matmul and cuDNN.")
     logger.info("Using device: %s", device)
 
     # 4. Load processed data — read feature columns for dims
@@ -118,7 +122,8 @@ def main() -> None:
         shuffle=True,
         collate_fn=capy_collate_fn,
         drop_last=True,  # contrastive learning needs consistent batch sizes
-        num_workers=0,
+        num_workers=2,
+        persistent_workers=True,
     )
     val_loader = DataLoader(
         val_ds,
@@ -126,7 +131,8 @@ def main() -> None:
         shuffle=False,
         collate_fn=capy_collate_fn,
         drop_last=False,
-        num_workers=0,
+        num_workers=2,
+        persistent_workers=True,
     )
 
     logger.info(

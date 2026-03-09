@@ -1,4 +1,4 @@
-Create or update notebooks/colab_training.ipynb to be fully self-contained for Google Colab with a T4 or V100 GPU.
+Create or update notebooks/colab_training.ipynb to be fully self-contained for Google Colab Pro with an H100 GPU.
 
 The notebook must have these cells in order:
 1. GPU verification: check torch.cuda.is_available(), print GPU name and memory
