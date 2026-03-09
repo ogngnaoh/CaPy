@@ -344,7 +344,7 @@ def load_raw_profiles(
     morph_df = _pd.read_csv(morph_path)
 
     logger.info("Loading expression profiles from %s", expr_path)
-    expr_df = _pd.read_csv(expr_path)
+    expr_df = _pd.read_csv(expr_path, low_memory=False)
 
     return morph_df, expr_df
 
@@ -513,7 +513,7 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
     metadata_df = None
     metadata_path = raw_dir / "metadata" / "repurposing_samples.txt"
     if metadata_path.exists():
-        metadata_df = _pd.read_csv(metadata_path, sep="\t")
+        metadata_df = _pd.read_csv(metadata_path, sep="\t", comment="!")
         logger.info("Loaded compound metadata: %d rows from %s", len(metadata_df), metadata_path)
     else:
         logger.warning("Compound metadata not found at %s — SMILES may be missing.", metadata_path)
