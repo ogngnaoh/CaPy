@@ -612,6 +612,46 @@ class TestPreprocess:
         assert "expr_a" in expr_kept
 
     @requires_pandas
+    @requires_numpy
+    def test_normalize_clips_expression_features(self) -> None:
+        """Expression features should be clipped to [-clip_range, clip_range].
+
+        Uses data that looks z-scored (mean≈0, std≈1) so re-normalization is
+        skipped, but contains extreme outliers from median aggregation.
+        """
+        import numpy as np
+        import pandas as pd
+
+        from src.data.preprocess import normalize_features
+
+        rng = np.random.RandomState(42)
+        n = 100
+        # z-scored bulk with a few extreme outliers (mimics L1000 after
+        # median aggregation of replicates)
+        expr_a = rng.standard_normal(n)
+        expr_a[0] = 15.0  # outlier
+        expr_b = rng.standard_normal(n)
+        expr_b[1] = -20.0  # outlier
+
+        df = pd.DataFrame(
+            {
+                "morph_a": rng.standard_normal(n),
+                "expr_a": expr_a,
+                "expr_b": expr_b,
+            }
+        )
+        result, _ = normalize_features(
+            df,
+            morph_cols=["morph_a"],
+            expr_cols=["expr_a", "expr_b"],
+            clip_range=5.0,
+        )
+        assert result["expr_a"].max() <= 5.0
+        assert result["expr_a"].min() >= -5.0
+        assert result["expr_b"].max() <= 5.0
+        assert result["expr_b"].min() >= -5.0
+
+    @requires_pandas
     @requires_rdkit
     def test_scaffold_split_no_leakage(self) -> None:
         """No scaffold should appear in more than one split."""

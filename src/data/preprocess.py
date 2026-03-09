@@ -208,7 +208,8 @@ def normalize_features(
         df: Data frame with QC-passed features.
         morph_cols: Morphology feature column names.
         expr_cols: Expression feature column names.
-        clip_range: Clip scaled morphology values to ``[-clip_range, clip_range]``.
+        clip_range: Clip scaled morphology and expression values to
+            ``[-clip_range, clip_range]``.
         train_mask: Boolean Series selecting training rows.  If ``None``,
             the scaler is fitted on the full dataframe (legacy behavior).
 
@@ -252,6 +253,11 @@ def normalize_features(
         train_std = stats_df.std()
         train_std = train_std.replace(0, 1.0)  # guard against division by zero
         df[expr_cols] = (df[expr_cols] - train_mean) / train_std
+
+    # Clip expression outliers — matches morphology treatment above.
+    # L1000 z-scores can have extreme values (> |10|) after median
+    # aggregation of replicates, which dominate encoder gradients.
+    df[expr_cols] = df[expr_cols].clip(-clip_range, clip_range)
 
     return df, scaler
 
