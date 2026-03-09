@@ -25,7 +25,7 @@ class TestEndToEnd:
         from omegaconf import OmegaConf
         from torch_geometric.data import Batch, Data
 
-        from src.data.featurize import ATOM_FEATURE_DIMS
+        from src.data.featurize import ATOM_FEATURE_DIMS, BOND_FEATURE_DIMS
         from src.models.capy import CaPyModel
 
         # --- Config ---
@@ -72,7 +72,11 @@ class TestEndToEnd:
                     torch.randint(0, num_atoms, (num_edges,)),
                 ]
             )
-            graphs.append(Data(x=x, edge_index=edge_index))
+            edge_attr = torch.stack(
+                [torch.randint(0, d, (num_edges,)) for d in BOND_FEATURE_DIMS],
+                dim=1,
+            )
+            graphs.append(Data(x=x, edge_index=edge_index, edge_attr=edge_attr))
 
         batch_graphs = Batch.from_data_list(graphs)
         morph = torch.randn(n_samples, morph_dim)

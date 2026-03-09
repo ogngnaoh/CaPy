@@ -138,6 +138,44 @@ class TestMolecularEncoder:
 
         assert torch.allclose(batched_out, individual_out, atol=1e-5)
 
+    @requires_torch
+    @requires_pyg
+    def test_forward_with_edge_attr(self) -> None:
+        """MolecularEncoder accepts edge_attr for GINEConv."""
+        from src.models.encoders import MolecularEncoder
+
+        batch = _make_batch_graphs(["CCO", "c1ccccc1"])
+        encoder = MolecularEncoder(_small_gin_cfg())
+        out = encoder(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr)
+        assert out.shape == (2, 256)
+
+
+# ---------------------------------------------------------------------------
+# BondEncoder tests
+# ---------------------------------------------------------------------------
+
+
+@requires_torch
+@requires_pyg
+class TestBondEncoder:
+    """Tests for BondEncoder."""
+
+    def test_output_shape(self) -> None:
+        """BondEncoder maps [E, 4] integer features to [E, hidden_dim]."""
+        import torch
+
+        from src.data.featurize import BOND_FEATURE_DIMS
+        from src.models.encoders import BondEncoder
+
+        hidden_dim = 64
+        num_edges = 20
+        edge_attr = torch.stack(
+            [torch.randint(0, d, (num_edges,)) for d in BOND_FEATURE_DIMS], dim=1
+        )
+        encoder = BondEncoder(hidden_dim)
+        out = encoder(edge_attr)
+        assert out.shape == (num_edges, hidden_dim)
+
 
 # ---------------------------------------------------------------------------
 # TabularEncoder tests

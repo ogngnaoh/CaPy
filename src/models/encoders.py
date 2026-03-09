@@ -44,9 +44,9 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn as nn
 import torch.nn.functional as f  # noqa: N812
-from torch_geometric.nn import GINConv, global_mean_pool
+from torch_geometric.nn import GINEConv, global_mean_pool
 
-from src.data.featurize import ATOM_FEATURE_DIMS
+from src.data.featurize import ATOM_FEATURE_DIMS, BOND_FEATURE_DIMS
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -93,6 +93,39 @@ class AtomEncoder(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# BondEncoder
+# ---------------------------------------------------------------------------
+
+
+class BondEncoder(nn.Module):
+    """Embed integer bond features into dense vectors via learned tables.
+
+    Mirrors AtomEncoder: each of the 4 bond feature slots has its own
+    ``nn.Embedding``, and outputs are summed to produce a single vector.
+
+    Args:
+        hidden_dim: Output dimensionality of bond embeddings.
+    """
+
+    def __init__(self, hidden_dim: int) -> None:
+        super().__init__()
+        self.embeddings = nn.ModuleList(
+            [nn.Embedding(vocab_size, hidden_dim) for vocab_size in BOND_FEATURE_DIMS]
+        )
+
+    def forward(self, edge_attr: torch.Tensor) -> torch.Tensor:
+        """Embed bond features ``[E, 4]`` → ``[E, hidden_dim]``."""
+        out = torch.zeros(
+            edge_attr.size(0),
+            self.embeddings[0].embedding_dim,
+            device=edge_attr.device,
+        )
+        for i, emb in enumerate(self.embeddings):
+            out = out + emb(edge_attr[:, i])
+        return out
+
+
+# ---------------------------------------------------------------------------
 # MolecularEncoder (GIN)
 # ---------------------------------------------------------------------------
 
@@ -113,12 +146,10 @@ class MolecularEncoder(nn.Module):
         embedding_dim: int = cfg.model.embedding_dim
 
         self.atom_encoder = AtomEncoder(hidden_dim)
+        self.bond_encoder = BondEncoder(hidden_dim)
 
-        # GIN layers: MLP inside GINConv has no BN; BN is applied externally
-        # after each conv (standard OGB pattern).
-        # NOTE: edge_attr from featurize.py is intentionally unused — GINConv
-        # operates on node features only. Bond features are stored for potential
-        # future use with GINEConv but do not affect the current architecture.
+        # GINEConv layers: like GINConv but incorporates bond (edge) features.
+        # BN is applied externally after each conv (standard OGB pattern).
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
         for _ in range(num_layers):
@@ -127,7 +158,7 @@ class MolecularEncoder(nn.Module):
                 nn.ReLU(),
                 nn.Linear(hidden_dim, hidden_dim),
             )
-            self.convs.append(GINConv(mlp, train_eps=True))
+            self.convs.append(GINEConv(mlp, train_eps=True))
             self.bns.append(nn.BatchNorm1d(hidden_dim))
 
         # Projection head: hidden_dim → mlp_hidden → embedding_dim
@@ -143,6 +174,7 @@ class MolecularEncoder(nn.Module):
         x: torch.Tensor,
         edge_index: torch.Tensor,
         batch: torch.Tensor,
+        edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Encode a batch of molecular graphs.
 
@@ -150,14 +182,21 @@ class MolecularEncoder(nn.Module):
             x: Atom feature matrix ``[total_atoms, 9]``.
             edge_index: COO edge indices ``[2, total_edges]``.
             batch: Graph membership vector ``[total_atoms]``.
+            edge_attr: Bond feature matrix ``[total_edges, 4]``, or None.
 
         Returns:
             L2-normalized embeddings ``[B, embedding_dim]``.
         """
         h = self.atom_encoder(x)
+        if edge_attr is not None:
+            edge_emb = self.bond_encoder(edge_attr)
+        else:
+            # Fallback: zero embeddings so GINEConv still works
+            hidden_dim = self.bond_encoder.embeddings[0].embedding_dim
+            edge_emb = torch.zeros(edge_index.size(1), hidden_dim, device=x.device)
 
         for conv, bn in zip(self.convs, self.bns):
-            h = f.relu(bn(conv(h, edge_index)))
+            h = f.relu(bn(conv(h, edge_index, edge_emb)))
 
         # Pool to graph-level
         h = global_mean_pool(h, batch)

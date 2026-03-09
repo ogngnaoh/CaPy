@@ -101,7 +101,10 @@ class CaPyModel(nn.Module):
             Dict with keys ``z_mol``, ``z_morph``, ``z_expr``, ``temperature``.
         """
         z_mol = self.mol_encoder(
-            batch_graphs.x, batch_graphs.edge_index, batch_graphs.batch
+            batch_graphs.x,
+            batch_graphs.edge_index,
+            batch_graphs.batch,
+            edge_attr=getattr(batch_graphs, "edge_attr", None),
         )
         z_morph = self.morph_encoder(morph)
         z_expr = self.expr_encoder(expr)
