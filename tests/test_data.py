@@ -652,6 +652,34 @@ class TestPreprocess:
         assert result["expr_b"].min() >= -5.0
 
     @requires_pandas
+    @requires_numpy
+    def test_normalize_logs_expression_feature_stats(self, caplog) -> None:
+        """normalize_features should log expression feature statistics."""
+        import logging
+
+        import pandas as pd
+
+        from src.data.preprocess import normalize_features
+
+        df = pd.DataFrame(
+            {
+                "morph_a": [1.0, 2.0, 3.0, 4.0],
+                "expr_a": [0.0, 1.0, -1.0, 0.5],
+                "expr_b": [0.1, 0.1, 0.1, 0.1],  # near-zero variance
+            }
+        )
+        with caplog.at_level(logging.INFO, logger="src.data.preprocess"):
+            normalize_features(
+                df,
+                morph_cols=["morph_a"],
+                expr_cols=["expr_a", "expr_b"],
+                clip_range=5.0,
+            )
+
+        log_text = caplog.text.lower()
+        assert "expr feature" in log_text or "near-zero variance" in log_text
+
+    @requires_pandas
     @requires_rdkit
     def test_scaffold_split_no_leakage(self) -> None:
         """No scaffold should appear in more than one split."""

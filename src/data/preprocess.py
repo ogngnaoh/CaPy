@@ -247,6 +247,27 @@ def normalize_features(
         expr_mean,
         expr_std,
     )
+
+    # Per-feature variance diagnostics
+    expr_feature_stds = stats_df.std()
+    n_near_zero = int((expr_feature_stds < 0.01).sum())
+    if n_near_zero > 0:
+        logger.warning(
+            "Expr feature QC: %d/%d features have near-zero variance "
+            "(std < 0.01) — these contribute noise, not signal.",
+            n_near_zero,
+            len(expr_cols),
+        )
+    logger.info(
+        "Expr feature stats: mean_of_stds=%.4f, min_std=%.4f, max_std=%.4f, "
+        "near_zero_var=%d/%d.",
+        expr_feature_stds.mean(),
+        expr_feature_stds.min(),
+        expr_feature_stds.max(),
+        n_near_zero,
+        len(expr_cols),
+    )
+
     if abs(expr_mean) > 0.5 or abs(expr_std - 1.0) > 0.5:
         logger.warning("Expression data deviates from z-score; re-normalizing.")
         train_mean = stats_df.mean()
