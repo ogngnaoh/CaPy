@@ -323,6 +323,16 @@ def feature_qc(
         Tuple of (cleaned df, surviving morph_cols, surviving expr_cols).
     """
     _ensure_imports()
+    # Replace inf with NaN so they count towards the NaN threshold
+    all_feature_cols = [c for c in morph_cols + expr_cols if c in df.columns]
+    n_inf = int(_np.isinf(df[all_feature_cols].select_dtypes("number").values).sum())
+    if n_inf > 0:
+        df = df.copy()
+        for c in all_feature_cols:
+            if _pd.api.types.is_numeric_dtype(df[c]):
+                df[c] = df[c].replace([_np.inf, -_np.inf], _np.nan)
+        logger.warning("feature_qc: replaced %d inf values with NaN.", n_inf)
+
     stats_df = df.loc[train_mask] if train_mask is not None else df
 
     def _filter_cols(cols: list[str]) -> list[str]:
@@ -1008,6 +1018,28 @@ def preprocess_pipeline(cfg: DictConfig) -> dict[str, Path]:  # noqa: F821
         morph_df.shape,
         expr_df.shape,
     )
+
+    # Replace inf/-inf with NaN — upstream cytominer z-scoring can produce
+    # inf from division by zero-variance controls.  Converting to NaN lets
+    # feature_qc handle them via the NaN threshold.
+    morph_numeric = morph_df.select_dtypes(include="number").columns
+    expr_numeric = expr_df.select_dtypes(include="number").columns
+    n_inf_morph = int(_np.isinf(morph_df[morph_numeric].values).sum())
+    n_inf_expr = int(_np.isinf(expr_df[expr_numeric].values).sum())
+    if n_inf_morph > 0:
+        morph_df[morph_numeric] = morph_df[morph_numeric].replace(
+            [_np.inf, -_np.inf], _np.nan
+        )
+        logger.warning(
+            "Replaced %d inf values with NaN in morphology data.", n_inf_morph
+        )
+    if n_inf_expr > 0:
+        expr_df[expr_numeric] = expr_df[expr_numeric].replace(
+            [_np.inf, -_np.inf], _np.nan
+        )
+        logger.warning(
+            "Replaced %d inf values with NaN in expression data.", n_inf_expr
+        )
 
     # Detect morph feature columns early (before any transformation)
     morph_feature_cols = [
