@@ -342,6 +342,22 @@ class Trainer:
             z_mol, z_morph, z_expr, ks=self.retrieval_ks
         )
 
+        # Early warning: check per-modality uniformity for collapse
+        _COLLAPSE_THRESHOLD = -0.5
+        for mod_name in ["mol", "morph", "expr"]:
+            key = f"uniform_{mod_name}"
+            if key in retrieval_metrics:
+                uniformity = retrieval_metrics[key]
+                if uniformity > _COLLAPSE_THRESHOLD:
+                    logger.warning(
+                        "COLLAPSE WARNING: %s uniformity=%.4f (threshold=%.1f). "
+                        "Encoder may be collapsing — all embeddings converging "
+                        "to a single point.",
+                        mod_name,
+                        uniformity,
+                        _COLLAPSE_THRESHOLD,
+                    )
+
         # Validation loss in fp32 for reliable early-stopping signal
         _, loss_dict = self.model.compute_loss(z_mol, z_morph, z_expr)
 

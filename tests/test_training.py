@@ -352,6 +352,34 @@ class TestTrainer:
             if key.startswith("embed_"):
                 assert math.isfinite(stats[key]), f"{key} is not finite: {stats[key]}"
 
+    def test_validate_warns_on_collapse(self, caplog) -> None:
+        """_validate should log a warning when a modality's uniformity > -0.5."""
+        import logging
+
+        import torch
+
+        from src.training.trainer import Trainer
+
+        cfg, model, train_loader, val_loader, optimizer, scheduler, device = (
+            _make_synthetic_setup()
+        )
+        trainer = Trainer(
+            cfg, model, train_loader, val_loader, optimizer, scheduler, device
+        )
+
+        # Force expression encoder to produce collapsed embeddings
+        with torch.no_grad():
+            for param in model.expr_encoder.parameters():
+                param.fill_(0.0)
+            model.expr_encoder.projection.bias.fill_(1.0)
+
+        with caplog.at_level(logging.WARNING, logger="src.training.trainer"):
+            trainer._validate(0)
+
+        assert any(
+            "collapse" in r.message.lower() for r in caplog.records
+        ), f"Expected collapse warning, got: {[r.message for r in caplog.records]}"
+
     def test_no_val_skips_early_stopping(self) -> None:
         """val_loader=None → runs all epochs without error."""
         from src.training.trainer import Trainer
