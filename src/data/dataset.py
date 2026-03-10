@@ -3,10 +3,15 @@
 WHY THIS WORKS
 --------------
 Each ``__getitem__`` call returns a ``(graph, morph_vector, expr_vector)``
-triplet for the *same* compound.  This alignment is the foundation of
-contrastive learning: within a batch, index *i* across all three
-modalities refers to the same drug, forming positive pairs.  All other
-index combinations are treated as negatives by InfoNCE.
+triplet for the *same* treatment (compound + dose).  This alignment is the
+foundation of contrastive learning: within a batch, index *i* across all
+three modalities refers to the same drug perturbation, forming positive
+pairs.  All other index combinations are treated as negatives by InfoNCE.
+
+The dataset operates at the treatment level: multiple doses of the same
+compound share the same molecular graph (since the molecule is identical),
+but have distinct morphology and expression profiles.  Graphs are cached
+by ``compound_id`` to avoid redundant SMILES-to-graph featurization.
 
 The custom ``capy_collate_fn`` handles the asymmetry between modalities:
 PyG graphs have variable sizes (different atoms/bonds) and must be
@@ -64,11 +69,13 @@ class CaPyDataset:
     instantiation.
 
     Args:
-        mol_graphs: List of PyG ``Data`` objects (one per compound).
+        mol_graphs: List of PyG ``Data`` objects (one per treatment).
         morph_features: Float tensor of shape ``[N, morph_dim]``.
         expr_features: Float tensor of shape ``[N, expr_dim]``.
         compound_ids: List of compound identifier strings, aligned
             with the other three arguments.
+        treatment_ids: Optional list of treatment identifiers. If not
+            provided, falls back to compound_ids for backward compat.
     """
 
     def __init__(
@@ -77,20 +84,24 @@ class CaPyDataset:
         morph_features: torch.Tensor,  # noqa: F821
         expr_features: torch.Tensor,  # noqa: F821
         compound_ids: list[str],
+        treatment_ids: list[str] | None = None,
     ) -> None:
         _ensure_imports()
         assert len(mol_graphs) == morph_features.shape[0] == expr_features.shape[0]
         assert len(compound_ids) == len(mol_graphs)
+        if treatment_ids is not None:
+            assert len(treatment_ids) == len(mol_graphs)
         if len(mol_graphs) == 0:
-            logger.warning("CaPyDataset created with 0 compounds.")
+            logger.warning("CaPyDataset created with 0 treatments.")
 
         self.mol_graphs = mol_graphs
         self.morph_features = morph_features
         self.expr_features = expr_features
         self.compound_ids = compound_ids
+        self.treatment_ids = treatment_ids or compound_ids
 
     def __len__(self) -> int:
-        """Return the number of compounds in this dataset split."""
+        """Return the number of treatments in this dataset split."""
         return len(self.mol_graphs)
 
     def __getitem__(self, idx: int) -> tuple:
@@ -149,6 +160,10 @@ def load_split_dataset(
 ) -> CaPyDataset:
     """Load a specific split from processed parquet files.
 
+    Molecular graphs are cached by ``compound_id``: multiple treatments
+    (different doses) of the same compound reuse the same graph object,
+    avoiding redundant SMILES-to-graph featurization.
+
     Args:
         processed_dir: Directory containing ``{split}.parquet`` and
             ``feature_columns.json``.
@@ -174,26 +189,30 @@ def load_split_dataset(
     df = pd.read_parquet(processed_dir / f"{split}.parquet")
     n_before = len(df)
 
-    # Filter to compounds that have graphs
+    # Filter to treatments whose compounds have graphs
     df = df.loc[df["compound_id"].isin(mol_graphs)].reset_index(drop=True)
     if len(df) < n_before:
         logger.warning(
-            "%s split: %d/%d compounds dropped (missing molecular graphs).",
+            "%s split: %d/%d treatments dropped (missing molecular graphs).",
             split,
             n_before - len(df),
             n_before,
         )
 
+    # Build graph list — keyed by compound_id, shared across doses
     graphs = [mol_graphs[cid] for cid in df["compound_id"]]
     morph = _torch.tensor(df[morph_cols].values, dtype=_torch.float32)
     expr = _torch.tensor(df[expr_cols].values, dtype=_torch.float32)
     compound_ids = df["compound_id"].tolist()
+    treatment_ids = (
+        df["treatment_id"].tolist() if "treatment_id" in df.columns else None
+    )
 
     logger.info(
-        "Loaded %s split: %d compounds, morph_dim=%d, expr_dim=%d.",
+        "Loaded %s split: %d treatments, morph_dim=%d, expr_dim=%d.",
         split,
         len(graphs),
         morph.shape[1],
         expr.shape[1],
     )
-    return CaPyDataset(graphs, morph, expr, compound_ids)
+    return CaPyDataset(graphs, morph, expr, compound_ids, treatment_ids)

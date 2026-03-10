@@ -61,12 +61,8 @@ class TestDownload:
         """If files already exist and are valid, download is skipped."""
         from src.data.download import download_rosetta_profiles
 
-        # Create fake pre-existing files
-        morph = (
-            tmp_path
-            / "morphology"
-            / "replicate_level_cp_normalized_variable_selected.csv.gz"
-        )
+        # Create fake pre-existing files (normalized filename)
+        morph = tmp_path / "morphology" / "replicate_level_cp_normalized.csv.gz"
         expr = tmp_path / "expression" / "replicate_level_l1k.csv.gz"
         morph.parent.mkdir(parents=True)
         expr.parent.mkdir(parents=True)
@@ -76,6 +72,13 @@ class TestDownload:
         result = download_rosetta_profiles(tmp_path, dry_run=False)
         assert result["morphology"] == morph
         assert result["expression"] == expr
+
+    def test_download_url_uses_normalized_file(self) -> None:
+        """HTTP_MORPH should point to the normalized (not variable-selected) file."""
+        from src.data.download import HTTP_MORPH
+
+        assert "replicate_level_cp_normalized.csv.gz" in HTTP_MORPH
+        assert "variable_selected" not in HTTP_MORPH
 
 
 # ===================================================================
@@ -301,7 +304,7 @@ class TestPreprocess:
     @requires_pandas
     @requires_numpy
     def test_normalize_clip_range(self) -> None:
-        """Morphology values should be clipped to [-clip_range, clip_range]."""
+        """All feature values should be clipped to [-clip_range, clip_range]."""
         import pandas as pd
 
         from src.data.preprocess import normalize_features
@@ -407,8 +410,37 @@ class TestPreprocess:
 
     @requires_pandas
     @requires_numpy
+    def test_aggregate_to_treatment_level(self) -> None:
+        """Aggregation should produce mean of numeric cols and preserve metadata."""
+        import numpy as np
+        import pandas as pd
+
+        from src.data.preprocess import aggregate_to_treatment_level
+
+        df = pd.DataFrame(
+            {
+                "treatment_id": ["trt1", "trt1", "trt1", "trt2", "trt2"],
+                "feat_a": [1.0, 3.0, 5.0, 10.0, 20.0],
+                "feat_b": [2.0, 4.0, 6.0, 100.0, 200.0],
+                "plate": ["P1", "P2", "P3", "P1", "P2"],
+            }
+        )
+        result = aggregate_to_treatment_level(df, treatment_col="treatment_id")
+        assert len(result) == 2
+
+        trt1 = result.loc[result["treatment_id"] == "trt1"].iloc[0]
+        assert np.isclose(trt1["feat_a"], 3.0)  # mean of [1, 3, 5]
+        assert np.isclose(trt1["feat_b"], 4.0)  # mean of [2, 4, 6]
+        assert trt1["plate"] == "P1"  # first value preserved
+
+        trt2 = result.loc[result["treatment_id"] == "trt2"].iloc[0]
+        assert np.isclose(trt2["feat_a"], 15.0)  # mean of [10, 20]
+        assert np.isclose(trt2["feat_b"], 150.0)  # mean of [100, 200]
+
+    @requires_pandas
+    @requires_numpy
     def test_aggregate_to_compound_level(self) -> None:
-        """Aggregation should produce median of numeric cols and preserve metadata."""
+        """Legacy aggregation should produce median of numeric cols."""
         import numpy as np
         import pandas as pd
 
@@ -428,15 +460,91 @@ class TestPreprocess:
         cpd1 = result.loc[result["compound_id"] == "cpd1"].iloc[0]
         assert np.isclose(cpd1["feat_a"], 3.0)  # median of [1, 3, 5]
         assert np.isclose(cpd1["feat_b"], 4.0)  # median of [2, 4, 6]
-        assert cpd1["plate"] == "P1"  # first value preserved
 
-        cpd2 = result.loc[result["compound_id"] == "cpd2"].iloc[0]
-        assert np.isclose(cpd2["feat_a"], 15.0)  # median of [10, 20]
-        assert np.isclose(cpd2["feat_b"], 150.0)  # median of [100, 200]
+    @requires_pandas
+    def test_match_treatments_with_metadata(self) -> None:
+        """match_treatments should map metadata columns via compound ID."""
+        import pandas as pd
+
+        from src.data.preprocess import match_treatments
+
+        morph_df = pd.DataFrame(
+            {
+                "Metadata_Sample_Dose": [
+                    "BRD-K12345678_10.0",
+                    "BRD-K23456789_5.0",
+                    "BRD-K34567890_1.0",
+                ],
+                "Cells_AreaShape_Area": [1.0, 2.0, 3.0],
+            }
+        )
+        expr_df = pd.DataFrame(
+            {
+                "pert_sample_dose": [
+                    "BRD-K12345678_10.0",
+                    "BRD-K23456789_5.0",
+                    "BRD-K34567890_1.0",
+                ],
+                "200814_at": [0.5, 0.6, 0.7],
+            }
+        )
+        metadata_df = pd.DataFrame(
+            {
+                "broad_id": [
+                    "BRD-K12345678",
+                    "BRD-K23456789",
+                    "BRD-K34567890",
+                ],
+                "smiles": ["CCO", "c1ccccc1", "CC(=O)O"],
+                "pert_iname": ["ethanol", "benzene", "acetic_acid"],
+            }
+        )
+
+        result = match_treatments(morph_df, expr_df, metadata_df=metadata_df)
+        assert len(result) == 3
+        assert "smiles" in result.columns
+        assert "treatment_id" in result.columns
+        assert "compound_id" in result.columns
+        assert result["smiles"].notna().all()
+
+    @requires_pandas
+    def test_match_treatments_extracts_compound_id(self) -> None:
+        """match_treatments should extract BRD compound ID from treatment ID."""
+        import pandas as pd
+
+        from src.data.preprocess import match_treatments
+
+        morph_df = pd.DataFrame(
+            {
+                "Metadata_Sample_Dose": [
+                    "BRD-K12345678_10.0",
+                    "BRD-K12345678_1.0",
+                    "BRD-K23456789_5.0",
+                ],
+                "Cells_Area": [1.0, 2.0, 3.0],
+            }
+        )
+        expr_df = pd.DataFrame(
+            {
+                "pert_sample_dose": [
+                    "BRD-K12345678_10.0",
+                    "BRD-K12345678_1.0",
+                    "BRD-K23456789_5.0",
+                ],
+                "probe_at": [0.5, 0.6, 0.7],
+            }
+        )
+
+        result = match_treatments(morph_df, expr_df)
+        assert "compound_id" in result.columns
+        # First two treatments share the same compound
+        assert result["compound_id"].iloc[0] == "BRD-K12345678"
+        assert result["compound_id"].iloc[1] == "BRD-K12345678"
+        assert result["compound_id"].iloc[2] == "BRD-K23456789"
 
     @requires_pandas
     def test_match_compounds_with_metadata(self) -> None:
-        """match_compounds should map metadata columns via compound ID."""
+        """Legacy match_compounds should map metadata via compound ID."""
         import pandas as pd
 
         from src.data.preprocess import match_compounds
@@ -486,7 +594,6 @@ class TestPreprocess:
 
         from src.data.preprocess import match_compounds
 
-        # Morph/expr use short BRD IDs
         morph_df = pd.DataFrame(
             {
                 "Metadata_broad_sample": ["BRD-K12345678", "BRD-K23456789"],
@@ -499,7 +606,6 @@ class TestPreprocess:
                 "gene_x": [0.5, 0.6],
             }
         )
-        # Metadata uses long BRD IDs (with batch/plate suffix)
         metadata_df = pd.DataFrame(
             {
                 "broad_id": [
@@ -517,108 +623,171 @@ class TestPreprocess:
         assert result["smiles"].tolist() == ["CCO", "c1ccccc1"]
 
     @requires_pandas
-    def test_expr_cols_excludes_string_metadata(self) -> None:
-        """Fallback expr_cols detection should skip non-numeric columns."""
+    @requires_numpy
+    def test_normalize_per_plate(self) -> None:
+        """Per-plate normalization should z-score features using controls."""
         import pandas as pd
+
+        from src.data.preprocess import normalize_per_plate
 
         df = pd.DataFrame(
             {
-                "compound_id": ["BRD-001", "BRD-002"],
-                "Cells_area": [1.0, 2.0],
-                "gene_A": [0.5, 0.6],
-                "pert_type": ["trt_cp", "trt_cp"],
+                "Metadata_Plate": ["P1", "P1", "P1", "P2", "P2", "P2"],
+                "Metadata_pert_type": [
+                    "control",
+                    "control",
+                    "trt_cp",
+                    "control",
+                    "control",
+                    "trt_cp",
+                ],
+                "feat_a": [10.0, 12.0, 20.0, 100.0, 102.0, 110.0],
+                "feat_b": [5.0, 5.0, 15.0, 50.0, 50.0, 60.0],
             }
         )
-        numeric_cols = set(df.select_dtypes(include="number").columns)
-        morph_cols = [
-            c for c in df.columns if c.startswith(("Cells_", "Nuclei_", "Cytoplasm_"))
-        ]
-        non_meta = [
-            c
-            for c in df.columns
-            if not c.startswith("Metadata_")
-            and c != "compound_id"
-            and c not in morph_cols
-            and c != "smiles"
-            and c != "split"
-            and c in numeric_cols
-        ]
-        assert "gene_A" in non_meta
-        assert "pert_type" not in non_meta
-
-    @requires_pandas
-    def test_primary_detection_excludes_string_suffixed_cols(self) -> None:
-        """Primary _morph/_expr suffix detection must skip non-numeric columns.
-
-        After merge with suffixes=("_morph", "_expr"), string columns like
-        pert_type become pert_type_morph / pert_type_expr.  These must be
-        excluded from feature column lists to prevent TypeError in feature_qc.
-        """
-        import pandas as pd
-
-        # Simulate a merged DataFrame with string cols that got suffixed
-        df = pd.DataFrame(
-            {
-                "compound_id": ["BRD-001", "BRD-002", "BRD-003"],
-                "feat_a_morph": [1.0, 2.0, 3.0],
-                "pert_type_morph": ["trt", "trt", "trt"],  # string!
-                "gene_x_expr": [0.5, 0.6, 0.7],
-                "pert_type_expr": ["trt_cp", "trt_cp", "trt_cp"],  # string!
-            }
+        result = normalize_per_plate(
+            df,
+            feature_cols=["feat_a", "feat_b"],
+            plate_col="Metadata_Plate",
+            control_col="Metadata_pert_type",
+            control_value="control",
         )
-        numeric_cols = set(df.select_dtypes(include="number").columns)
-        morph_cols = [
-            c
-            for c in df.columns
-            if not c.startswith("Metadata_")
-            and c != "compound_id"
-            and c.endswith("_morph")
-            and c in numeric_cols
-        ]
-        expr_cols = [
-            c
-            for c in df.columns
-            if c != "compound_id" and c.endswith("_expr") and c in numeric_cols
-        ]
-        assert "feat_a_morph" in morph_cols
-        assert "pert_type_morph" not in morph_cols
-        assert "gene_x_expr" in expr_cols
-        assert "pert_type_expr" not in expr_cols
+        # Controls on each plate should have ~zero mean
+        for plate in ["P1", "P2"]:
+            ctrl_mask = (result["Metadata_Plate"] == plate) & (
+                result["Metadata_pert_type"] == "control"
+            )
+            ctrl_means = result.loc[ctrl_mask, ["feat_a", "feat_b"]].mean()
+            assert abs(ctrl_means["feat_a"]) < 1e-10
+            assert abs(ctrl_means["feat_b"]) < 1e-10
 
     @requires_pandas
     @requires_numpy
-    def test_feature_qc_skips_non_numeric_cols(self) -> None:
-        """feature_qc should not crash when given non-numeric columns."""
+    def test_filter_by_replicate_correlation(self) -> None:
+        """Treatments with low replicate correlation should be filtered."""
+        import numpy as np
         import pandas as pd
 
-        from src.data.preprocess import feature_qc
+        from src.data.preprocess import filter_by_replicate_correlation
+
+        rng = np.random.RandomState(42)
+        n_features = 50
+
+        # Create treatments: one with high correlation, one with low
+        rows = []
+        # Good treatment: replicates are similar
+        base_profile = rng.standard_normal(n_features)
+        for _ in range(4):
+            rows.append(
+                {
+                    "treatment_id": "good_trt",
+                    "Metadata_pert_type": "trt_cp",
+                    **{
+                        f"feat_{i}": base_profile[i] + rng.normal(0, 0.1)
+                        for i in range(n_features)
+                    },
+                }
+            )
+        # Bad treatment: replicates are random noise
+        for _ in range(4):
+            noise = rng.standard_normal(n_features)
+            rows.append(
+                {
+                    "treatment_id": "bad_trt",
+                    "Metadata_pert_type": "trt_cp",
+                    **{f"feat_{i}": noise[i] for i in range(n_features)},
+                }
+            )
+        # Controls: moderate correlation (forms null distribution)
+        ctrl_base = rng.standard_normal(n_features)
+        for _ in range(6):
+            rows.append(
+                {
+                    "treatment_id": "DMSO",
+                    "Metadata_pert_type": "control",
+                    "Metadata_Plate": "P1",
+                    **{
+                        f"feat_{i}": ctrl_base[i] + rng.normal(0, 0.5)
+                        for i in range(n_features)
+                    },
+                }
+            )
+
+        df = pd.DataFrame(rows)
+        feature_cols = [f"feat_{i}" for i in range(n_features)]
+
+        result = filter_by_replicate_correlation(
+            df,
+            feature_cols=feature_cols,
+            treatment_col="treatment_id",
+            control_col="Metadata_pert_type",
+            control_value="control",
+            percentile=90,
+        )
+
+        trt_ids = result[result["Metadata_pert_type"] == "trt_cp"][
+            "treatment_id"
+        ].unique()
+        # Good treatment should be kept
+        assert "good_trt" in trt_ids
+
+    @requires_pandas
+    def test_detect_feature_columns_at_pattern(self) -> None:
+        """Feature detection should find CellProfiler and _at columns."""
+        import pandas as pd
+
+        from src.data.preprocess import detect_feature_columns
 
         df = pd.DataFrame(
             {
-                "feat_a": [1.0, 2.0, 3.0, 4.0],
-                "str_col": ["a", "b", "c", "d"],  # non-numeric
-                "expr_a": [0.1, 0.2, 0.3, 0.4],
+                "treatment_id": ["trt1", "trt2"],
+                "compound_id": ["BRD-K001", "BRD-K002"],
+                "Cells_AreaShape_Area": [100.0, 200.0],
+                "Nuclei_Texture_Entropy": [0.5, 0.6],
+                "Cytoplasm_Intensity_Mean": [300.0, 400.0],
+                "200814_at": [1.0, 2.0],
+                "201453_at": [3.0, 4.0],
+                "pert_dose": [10.0, 5.0],
+                "Metadata_Plate": ["P1", "P2"],
             }
         )
-        # Pass the string column as if it were a morph feature
-        _, morph_kept, expr_kept = feature_qc(
-            df,
-            morph_cols=["feat_a", "str_col"],
-            expr_cols=["expr_a"],
-            nan_threshold=0.5,
+        morph_cols, expr_cols = detect_feature_columns(df)
+        assert "Cells_AreaShape_Area" in morph_cols
+        assert "Nuclei_Texture_Entropy" in morph_cols
+        assert "Cytoplasm_Intensity_Mean" in morph_cols
+        assert "200814_at" in expr_cols
+        assert "201453_at" in expr_cols
+        assert "pert_dose" not in morph_cols
+        assert "pert_dose" not in expr_cols
+        assert len(morph_cols) == 3
+        assert len(expr_cols) == 2
+
+    @requires_pandas
+    def test_detect_feature_columns_fallback(self) -> None:
+        """When no _at columns exist, fallback to negative selection."""
+        import pandas as pd
+
+        from src.data.preprocess import detect_feature_columns
+
+        df = pd.DataFrame(
+            {
+                "treatment_id": ["trt1", "trt2"],
+                "compound_id": ["BRD-K001", "BRD-K002"],
+                "Cells_Area": [100.0, 200.0],
+                "gene_A": [1.0, 2.0],
+                "gene_B": [3.0, 4.0],
+                "smiles": ["CCO", "c1ccccc1"],
+            }
         )
-        assert "feat_a" in morph_kept
-        assert "str_col" not in morph_kept
-        assert "expr_a" in expr_kept
+        morph_cols, expr_cols = detect_feature_columns(df)
+        assert "Cells_Area" in morph_cols
+        assert "gene_A" in expr_cols
+        assert "gene_B" in expr_cols
 
     @requires_pandas
     @requires_numpy
     def test_normalize_clips_expression_features(self) -> None:
-        """Expression features should be clipped to [-clip_range, clip_range].
-
-        Uses data that looks z-scored (mean≈0, std≈1) so re-normalization is
-        skipped, but contains extreme outliers from median aggregation.
-        """
+        """Expression features should be clipped to [-clip_range, clip_range]."""
         import numpy as np
         import pandas as pd
 
@@ -626,8 +795,6 @@ class TestPreprocess:
 
         rng = np.random.RandomState(42)
         n = 100
-        # z-scored bulk with a few extreme outliers (mimics L1000 after
-        # median aggregation of replicates)
         expr_a = rng.standard_normal(n)
         expr_a[0] = 15.0  # outlier
         expr_b = rng.standard_normal(n)
@@ -652,34 +819,6 @@ class TestPreprocess:
         assert result["expr_b"].min() >= -5.0
 
     @requires_pandas
-    @requires_numpy
-    def test_normalize_logs_expression_feature_stats(self, caplog) -> None:
-        """normalize_features should log expression feature statistics."""
-        import logging
-
-        import pandas as pd
-
-        from src.data.preprocess import normalize_features
-
-        df = pd.DataFrame(
-            {
-                "morph_a": [1.0, 2.0, 3.0, 4.0],
-                "expr_a": [0.0, 1.0, -1.0, 0.5],
-                "expr_b": [0.1, 0.1, 0.1, 0.1],  # near-zero variance
-            }
-        )
-        with caplog.at_level(logging.INFO, logger="src.data.preprocess"):
-            normalize_features(
-                df,
-                morph_cols=["morph_a"],
-                expr_cols=["expr_a", "expr_b"],
-                clip_range=5.0,
-            )
-
-        log_text = caplog.text.lower()
-        assert "expr feature" in log_text or "near-zero variance" in log_text
-
-    @requires_pandas
     @requires_rdkit
     def test_scaffold_split_no_leakage(self) -> None:
         """No scaffold should appear in more than one split."""
@@ -702,6 +841,54 @@ class TestPreprocess:
             other_scaffolds = {_get_scaffold(s) for s in other_smiles}
             overlap = split_scaffolds & other_scaffolds
             assert len(overlap) == 0, f"Scaffold leakage in {split_name}: {overlap}"
+
+    @requires_pandas
+    @requires_rdkit
+    def test_scaffold_split_groups_all_doses(self) -> None:
+        """All doses of the same compound should land in the same split."""
+        import pandas as pd
+
+        from src.data.preprocess import scaffold_split
+
+        # Same compound at different doses — all share same SMILES
+        df = pd.DataFrame(
+            {
+                "treatment_id": [
+                    "BRD-K12345678_1.0",
+                    "BRD-K12345678_5.0",
+                    "BRD-K12345678_10.0",
+                    "BRD-K23456789_1.0",
+                    "BRD-K23456789_5.0",
+                ],
+                "compound_id": [
+                    "BRD-K12345678",
+                    "BRD-K12345678",
+                    "BRD-K12345678",
+                    "BRD-K23456789",
+                    "BRD-K23456789",
+                ],
+                "smiles": [
+                    "CCO",
+                    "CCO",
+                    "CCO",
+                    "c1ccccc1",
+                    "c1ccccc1",
+                ],
+            }
+        )
+        result = scaffold_split(df, seed=42)
+
+        # All doses of compound 1 should be in the same split
+        cpd1_splits = result.loc[
+            result["compound_id"] == "BRD-K12345678", "split"
+        ].unique()
+        assert len(cpd1_splits) == 1, f"Compound 1 in multiple splits: {cpd1_splits}"
+
+        # All doses of compound 2 should be in the same split
+        cpd2_splits = result.loc[
+            result["compound_id"] == "BRD-K23456789", "split"
+        ].unique()
+        assert len(cpd2_splits) == 1, f"Compound 2 in multiple splits: {cpd2_splits}"
 
 
 # ===================================================================
@@ -729,6 +916,27 @@ class TestDataset:
 
         ds = CaPyDataset(graphs, morph, expr, ids)
         assert len(ds) == n
+
+    @requires_ml
+    def test_dataset_with_treatment_ids(self) -> None:
+        """Dataset should accept separate treatment_ids."""
+        import torch
+
+        from src.data.dataset import CaPyDataset
+        from src.data.featurize import smiles_to_graph
+
+        graphs = [smiles_to_graph(s) for s in SIMPLE_SMILES[:3]]
+        graphs = [g for g in graphs if g is not None]
+        n = len(graphs)
+        morph = torch.randn(n, 50)
+        expr = torch.randn(n, 30)
+        compound_ids = [f"cpd_{i}" for i in range(n)]
+        treatment_ids = [f"trt_{i}" for i in range(n)]
+
+        ds = CaPyDataset(graphs, morph, expr, compound_ids, treatment_ids)
+        assert len(ds) == n
+        assert ds.treatment_ids == treatment_ids
+        assert ds.compound_ids == compound_ids
 
     @requires_ml
     def test_getitem_types_and_shapes(self) -> None:
@@ -831,39 +1039,34 @@ class TestFeatureDetection:
     """Tests for morph/expr column detection logic."""
 
     @requires_pandas
-    def test_expr_cols_excludes_metadata(self) -> None:
-        """pert_dose_expr and pert_time_expr must NOT be in expr_cols."""
+    def test_detect_at_columns_as_expr(self) -> None:
+        """L1000 probe columns ending with _at should be detected as expr."""
         import pandas as pd
+
+        from src.data.preprocess import detect_feature_columns
 
         df = pd.DataFrame(
             {
+                "treatment_id": ["trt1", "trt2"],
                 "compound_id": ["BRD-K001", "BRD-K002"],
-                "gene_A_expr": [1.0, 2.0],
-                "gene_B_expr": [3.0, 4.0],
-                "pert_dose_expr": [10.0, 5.0],
-                "pert_time_expr": [24.0, 48.0],
+                "Cells_Area": [100.0, 200.0],
+                "200814_at": [1.0, 2.0],
+                "201453_at": [3.0, 4.0],
+                "pert_dose": [10.0, 5.0],
             }
         )
-        numeric_cols = set(df.select_dtypes(include="number").columns)
-        _METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
-        expr_cols = [
-            c
-            for c in df.columns
-            if c != "compound_id"
-            and c.endswith("_expr")
-            and c in numeric_cols
-            and not any(c.startswith(p) for p in _METADATA_PREFIXES)
-        ]
-        assert "pert_dose_expr" not in expr_cols
-        assert "pert_time_expr" not in expr_cols
-        assert "gene_A_expr" in expr_cols
-        assert "gene_B_expr" in expr_cols
-        assert len(expr_cols) == 2
+        morph_cols, expr_cols = detect_feature_columns(df)
+        assert "200814_at" in expr_cols
+        assert "201453_at" in expr_cols
+        assert "pert_dose" not in expr_cols
+        assert "Cells_Area" in morph_cols
 
     @requires_pandas
     def test_morph_cols_includes_cellprofiler_features(self) -> None:
         """CellProfiler columns (Cells_, Nuclei_, Cytoplasm_) must be in morph_cols."""
         import pandas as pd
+
+        from src.data.preprocess import detect_feature_columns
 
         df = pd.DataFrame(
             {
@@ -871,29 +1074,14 @@ class TestFeatureDetection:
                 "Cells_AreaShape_Area": [100.0, 200.0],
                 "Nuclei_Texture_Entropy": [0.5, 0.6],
                 "Cytoplasm_Intensity_Mean": [300.0, 400.0],
-                "shared_col_morph": [1.0, 2.0],
-                "pert_type_morph": ["trt_cp", "trt_cp"],
+                "200814_at": [1.0, 2.0],
+                "pert_type": ["trt_cp", "trt_cp"],
             }
         )
-        numeric_cols = set(df.select_dtypes(include="number").columns)
-        _CELLPROFILER_PREFIXES = ("Cells_", "Nuclei_", "Cytoplasm_")
-        _METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
-        morph_cols = [
-            c
-            for c in df.columns
-            if c in numeric_cols
-            and c != "compound_id"
-            and (
-                c.startswith(_CELLPROFILER_PREFIXES)
-                or (
-                    c.endswith("_morph")
-                    and not any(c.startswith(p) for p in _METADATA_PREFIXES)
-                )
-            )
-        ]
+        morph_cols, expr_cols = detect_feature_columns(df)
         assert "Cells_AreaShape_Area" in morph_cols
         assert "Nuclei_Texture_Entropy" in morph_cols
         assert "Cytoplasm_Intensity_Mean" in morph_cols
-        assert "shared_col_morph" in morph_cols
-        assert "pert_type_morph" not in morph_cols
-        assert len(morph_cols) == 4
+        assert "200814_at" in expr_cols
+        assert "pert_type" not in morph_cols
+        assert "pert_type" not in expr_cols

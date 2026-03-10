@@ -6,12 +6,18 @@ seed: 42
 data:
   raw_dir: data/raw
   processed_dir: data/processed
+  morph_file: "replicate_level_cp_normalized.csv.gz"
+  morph_id_col: "Metadata_Sample_Dose"
+  expr_id_col: "pert_sample_dose"
+  aggregation: "mean"
+  replicate_corr_percentile: 90
+  per_plate_normalize: true
   morph_features: ~1000  # after QC
   expr_features: 978     # L1000 landmark genes
   train_ratio: 0.70
   val_ratio: 0.15
   test_ratio: 0.15
-  nan_threshold: 0.5     # remove features with >50% NaN
+  nan_threshold: 0.05    # remove features with >5% NaN (matches Rosetta reference)
   clip_range: 5.0        # clip RobustScaler output to [-5, 5]
 
 model:

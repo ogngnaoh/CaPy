@@ -38,7 +38,7 @@ HTTP_MORPH = (
     "https://cellpainting-gallery.s3.amazonaws.com/"
     "cpg0003-rosetta/broad/workspace/preprocessed_data/"
     "CDRPBIO-BBBC036-Bray/CellPainting/"
-    "replicate_level_cp_normalized_variable_selected.csv.gz"
+    "replicate_level_cp_normalized.csv.gz"
 )
 HTTP_EXPR = (
     "https://cellpainting-gallery.s3.amazonaws.com/"
@@ -156,10 +156,8 @@ def download_rosetta_profiles(
 
     files = {
         "morphology": {
-            "local": output_dir
-            / "morphology"
-            / "replicate_level_cp_normalized_variable_selected.csv.gz",
-            "s3": f"{S3_MORPH}replicate_level_cp_normalized_variable_selected.csv.gz",
+            "local": output_dir / "morphology" / "replicate_level_cp_normalized.csv.gz",
+            "s3": f"{S3_MORPH}replicate_level_cp_normalized.csv.gz",
             "http": HTTP_MORPH,
         },
         "expression": {
