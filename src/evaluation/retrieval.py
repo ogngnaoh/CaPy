@@ -99,7 +99,9 @@ def compute_retrieval_metrics(
 # ---------------------------------------------------------------------------
 
 
-def compute_alignment(z_a: torch.Tensor, z_b: torch.Tensor, alpha: float = 2.0) -> float:
+def compute_alignment(
+    z_a: torch.Tensor, z_b: torch.Tensor, alpha: float = 2.0
+) -> float:
     """Mean pairwise distance between aligned positive pairs.
 
     Lower = better (positive pairs are close together).
@@ -201,10 +203,9 @@ def evaluate_all_retrieval(
     all_metrics["mean_alignment"] = sum(
         all_metrics[f"align_{p}"] for p, _, _ in _pairs
     ) / len(_pairs)
-    all_metrics["mean_uniformity"] = sum(
-        all_metrics[f"uniform_{m}"]
-        for m in ["mol", "morph", "expr"]
-    ) / 3.0
+    all_metrics["mean_uniformity"] = (
+        sum(all_metrics[f"uniform_{m}"] for m in ["mol", "morph", "expr"]) / 3.0
+    )
 
     logger.info(
         "Retrieval: mean_R@1=%.4f, mean_R@5=%.4f, mean_R@10=%.4f, mean_MRR=%.4f",

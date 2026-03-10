@@ -835,17 +835,20 @@ class TestFeatureDetection:
         """pert_dose_expr and pert_time_expr must NOT be in expr_cols."""
         import pandas as pd
 
-        df = pd.DataFrame({
-            "compound_id": ["BRD-K001", "BRD-K002"],
-            "gene_A_expr": [1.0, 2.0],
-            "gene_B_expr": [3.0, 4.0],
-            "pert_dose_expr": [10.0, 5.0],
-            "pert_time_expr": [24.0, 48.0],
-        })
+        df = pd.DataFrame(
+            {
+                "compound_id": ["BRD-K001", "BRD-K002"],
+                "gene_A_expr": [1.0, 2.0],
+                "gene_B_expr": [3.0, 4.0],
+                "pert_dose_expr": [10.0, 5.0],
+                "pert_time_expr": [24.0, 48.0],
+            }
+        )
         numeric_cols = set(df.select_dtypes(include="number").columns)
         _METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
         expr_cols = [
-            c for c in df.columns
+            c
+            for c in df.columns
             if c != "compound_id"
             and c.endswith("_expr")
             and c in numeric_cols
@@ -862,19 +865,22 @@ class TestFeatureDetection:
         """CellProfiler columns (Cells_, Nuclei_, Cytoplasm_) must be in morph_cols."""
         import pandas as pd
 
-        df = pd.DataFrame({
-            "compound_id": ["BRD-K001", "BRD-K002"],
-            "Cells_AreaShape_Area": [100.0, 200.0],
-            "Nuclei_Texture_Entropy": [0.5, 0.6],
-            "Cytoplasm_Intensity_Mean": [300.0, 400.0],
-            "shared_col_morph": [1.0, 2.0],
-            "pert_type_morph": ["trt_cp", "trt_cp"],
-        })
+        df = pd.DataFrame(
+            {
+                "compound_id": ["BRD-K001", "BRD-K002"],
+                "Cells_AreaShape_Area": [100.0, 200.0],
+                "Nuclei_Texture_Entropy": [0.5, 0.6],
+                "Cytoplasm_Intensity_Mean": [300.0, 400.0],
+                "shared_col_morph": [1.0, 2.0],
+                "pert_type_morph": ["trt_cp", "trt_cp"],
+            }
+        )
         numeric_cols = set(df.select_dtypes(include="number").columns)
         _CELLPROFILER_PREFIXES = ("Cells_", "Nuclei_", "Cytoplasm_")
         _METADATA_PREFIXES = ("pert_", "det_", "distil_", "cell_", "Metadata_", "rna_")
         morph_cols = [
-            c for c in df.columns
+            c
+            for c in df.columns
             if c in numeric_cols
             and c != "compound_id"
             and (
