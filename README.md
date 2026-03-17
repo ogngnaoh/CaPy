@@ -1,4 +1,4 @@
-# CaPy: Contrastive Alignment of Phenotypic Yields
+# CaPy: Contrastive Alignment of Phenotypic Yields (OUTDATED V1)
 
 Tri-modal contrastive learning framework for drug discovery.
 
